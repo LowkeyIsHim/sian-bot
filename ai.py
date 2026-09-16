@@ -45,14 +45,27 @@ def ask_sian(chat_id: int, user_message: str) -> str:
     payload = {
         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": contents,
-        "generationConfig": {"maxOutputTokens": 1000},
+        "generationConfig": {
+            # Sweet spot for creative/poetic writing: high enough for voice
+            # and imagery to feel alive, not so high it goes incoherent.
+            "temperature": 1.0,
+            "topP": 0.95,
+            # Generous budget - on 3.5-tier models, internal "thinking"
+            # tokens are drawn from this same pool before the visible reply
+            # is written, so a low limit here can truncate the actual poem.
+            "maxOutputTokens": 2048,
+        },
     }
 
     resp = requests.post(API_URL, json=payload, timeout=60)
     resp.raise_for_status()
     data = resp.json()
 
-    reply_text = data["candidates"][0]["content"]["parts"][0]["text"]
+    candidate = data["candidates"][0]
+    if candidate.get("finishReason") == "MAX_TOKENS":
+        print("[ai] WARNING: response was cut off by maxOutputTokens.")
+
+    reply_text = candidate["content"]["parts"][0]["text"]
 
     history.append({"role": "model", "text": reply_text})
     return reply_text
