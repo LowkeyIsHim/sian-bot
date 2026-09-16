@@ -21,12 +21,20 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PERSISTENT_DIR = os.path.dirname(_THIS_DIR)
 ACCESS_FILE = os.path.join(_PERSISTENT_DIR, "access_list.json")
 
-# Hardcoded creator Telegram user IDs - fill these in.
+# Creator Telegram user IDs, read from the CREATOR_IDS environment variable
+# (set in secrets.env) as a comma-separated list, e.g. "111111111,222222222".
 # Get your own ID by messaging the bot /whoami once it's running.
-CREATOR_IDS = {
-    6546958276,  # replace with your Telegram user ID
-    8856537163,  # replace with her Telegram user ID
-}
+def _parse_creator_ids() -> set[int]:
+    raw = os.environ.get("CREATOR_IDS", "")
+    ids = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.add(int(part))
+    return ids
+
+
+CREATOR_IDS = _parse_creator_ids()
 
 
 def _load() -> dict:
