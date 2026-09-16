@@ -24,8 +24,8 @@ ACCESS_FILE = os.path.join(_PERSISTENT_DIR, "access_list.json")
 # Hardcoded creator Telegram user IDs - fill these in.
 # Get your own ID by messaging the bot /whoami once it's running.
 CREATOR_IDS = {
-    111111111,  # replace with your Telegram user ID
-    222222222,  # replace with her Telegram user ID
+    6546958276,  # replace with your Telegram user ID
+    8856537163,  # replace with her Telegram user ID
 }
 
 
