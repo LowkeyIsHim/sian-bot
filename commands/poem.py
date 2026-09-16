@@ -1,12 +1,15 @@
 """
 /poem [theme] - explicitly requests a poem, optionally about a given theme.
+Sends a matching aesthetic photo alongside it, mirroring how she posts on
+her own channel.
 """
 
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 
 import access
-from ai import ask_sian
+from ai import ask_sian, get_image_search_phrase
+from photos import get_matching_photo_url
 
 
 async def poem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -24,9 +27,21 @@ async def poem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         reply = ask_sian(chat_id, prompt)
     except Exception:
-        reply = "Something went wrong on my end. Try again in a moment."
+        await update.message.reply_text("Something went wrong on my end. Try again in a moment.")
+        return
 
     await update.message.reply_text(reply)
+
+    # Best-effort: pair the poem with a matching aesthetic photo. If this
+    # fails for any reason (no Pexels key, no results, network hiccup),
+    # the poem has already been sent - we just skip the photo silently.
+    try:
+        query = get_image_search_phrase(reply)
+        photo_url = get_matching_photo_url(query)
+        if photo_url:
+            await update.message.reply_photo(photo=photo_url)
+    except Exception:
+        pass
 
 
 def register(app) -> None:
