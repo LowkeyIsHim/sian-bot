@@ -73,3 +73,25 @@ def ask_sian(chat_id: int, user_message: str) -> str:
 
 def reset_history(chat_id: int) -> None:
     _conversations.pop(chat_id, None)
+
+
+def get_image_search_phrase(poem_text: str) -> str:
+    """One-off call (not part of the ongoing conversation) that reads a
+    finished poem and returns a short aesthetic photo search phrase to
+    pair with it - e.g. 'moody rain window aesthetic'."""
+    prompt = (
+        "Read this poem and output ONLY a short photo search phrase "
+        "(3-6 words, no punctuation, no explanation) describing the kind "
+        "of moody, soft, aesthetic photograph that would pair well with "
+        "it on a poetry page.\n\nPoem:\n" + poem_text
+    )
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 30},
+    }
+    try:
+        resp = requests.post(API_URL, json=payload, timeout=30)
+        resp.raise_for_status()
+        return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception:
+        return "moody aesthetic soft light"
