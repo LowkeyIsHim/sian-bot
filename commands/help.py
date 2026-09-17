@@ -1,5 +1,5 @@
 """
-/help - lists everything the bot can do.
+/help - lists everything the bot can do, styled to match her aesthetic.
 """
 
 from telegram import Update
@@ -8,13 +8,13 @@ from telegram.ext import ContextTypes, CommandHandler
 import access
 
 HELP_TEXT = (
-    "🎀 *Here's what I can do*\n\n"
-    "✒️ /poem \\[theme] — write a poem, about anything you name (or nothing at all)\n"
-    "📖 /story \\[theme] — write a short story\n"
-    "🕊️ /reset — clear our current conversation, start fresh\n"
-    "🪪 /whoami — see your Telegram ID\n"
+    "𓆩🎀𓆪 *what i can do* 𓆩🎀𓆪\n\n"
+    "✒️ /poem `[theme]` — a poem, written the way i would\n"
+    "📖 /story `[theme]` — a short story, quiet and internal\n"
+    "🕊️ /reset — clear the page, start fresh\n"
+    "🪶 /whoami — see your telegram id\n"
     "🛠️ /developer — who built me\n\n"
-    "Or just talk to me like a person. No command needed for that."
+    "˚₊‧ or just talk to me like a person. no command needed for that. ‧₊˚"
 )
 
 
