@@ -4,12 +4,16 @@ Sends a matching aesthetic photo alongside it, mirroring how she posts on
 her own channel.
 """
 
+import logging
+
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 
 import access
 from ai import ask_sian, get_image_search_phrase
 from photos import get_matching_photo_url
+
+logger = logging.getLogger(__name__)
 
 
 async def poem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -27,6 +31,7 @@ async def poem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         reply = ask_sian(chat_id, prompt)
     except Exception:
+        logger.exception("Error generating poem")
         await update.message.reply_text("Something went wrong on my end. Try again in a moment.")
         return
 
