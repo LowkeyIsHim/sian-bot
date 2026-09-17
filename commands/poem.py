@@ -11,7 +11,7 @@ from telegram.ext import ContextTypes, CommandHandler
 
 import access
 from ai import ask_sian, get_image_search_phrase, split_title
-from photos import get_matching_photo_url
+from photos import get_matching_photo
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +47,9 @@ async def poem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # the poem has already been sent - we just skip the photo silently.
     try:
         query = get_image_search_phrase(body)
-        photo_url = get_matching_photo_url(query)
-        if photo_url:
-            await update.message.reply_photo(photo=photo_url)
+        photo_file = get_matching_photo(query)
+        if photo_file:
+            await update.message.reply_photo(photo=photo_file)
     except Exception:
         pass
 
