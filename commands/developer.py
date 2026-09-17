@@ -10,7 +10,7 @@ from branding import header
 DEVELOPER_TEXT = (
     f"{header('the person behind this')}\n\n"
     "built by *lowkey*\n\n"
-    "telegram: [@Im\\_just\\_l0wkey](https://t.me/Im_just_l0wkey)\n\n"
+    "telegram: [message me here](https://t.me/Im_just_l0wkey)\n\n"
     "_reach out for bugs, feature ideas, or just to say hi._"
 )
 
