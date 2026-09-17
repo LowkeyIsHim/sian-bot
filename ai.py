@@ -6,6 +6,7 @@ one-time credit balance - it just resets daily. Good fit for a personal bot.
 """
 
 import os
+import time
 import requests
 
 from personality import SYSTEM_PROMPT
@@ -16,6 +17,26 @@ API_URL = (
     f"https://generativelanguage.googleapis.com/v1beta/models/"
     f"{MODEL}:generateContent?key={GEMINI_API_KEY}"
 )
+
+
+class RateLimitError(Exception):
+    """Raised when Gemini returns a 429 (too many requests) after retries
+    are exhausted - lets command handlers show a friendlier message."""
+    pass
+
+
+def _post_with_retry(payload: dict, retries: int = 2, backoff: float = 3.0) -> dict:
+    """POSTs to the Gemini API, retrying briefly on 429s (rate limits
+    are usually per-minute and clear up fast) before giving up."""
+    for attempt in range(retries + 1):
+        resp = requests.post(API_URL, json=payload, timeout=60)
+        if resp.status_code == 429:
+            if attempt < retries:
+                time.sleep(backoff * (attempt + 1))
+                continue
+            raise RateLimitError("Gemini rate limit hit after retries")
+        resp.raise_for_status()
+        return resp.json()
 
 # Keeps a short rolling conversation per chat_id so replies stay in context.
 _conversations: dict[int, list[dict]] = {}
@@ -57,9 +78,7 @@ def ask_sian(chat_id: int, user_message: str) -> str:
         },
     }
 
-    resp = requests.post(API_URL, json=payload, timeout=60)
-    resp.raise_for_status()
-    data = resp.json()
+    data = _post_with_retry(payload)
 
     candidate = data["candidates"][0]
     if candidate.get("finishReason") == "MAX_TOKENS":
@@ -98,8 +117,8 @@ def get_image_search_phrase(poem_text: str) -> str:
         "(3-6 words, no punctuation, no explanation) describing the kind "
         "of moody, soft, aesthetic photograph that would pair well with "
         "it on a poetry page - think solitary figures, quiet interiors, "
-        "melancholic natural light, muted tones. Avoid party, "
-        "or overtly social/upbeat imagery, even if the poem "
+        "melancholic natural light, muted tones. Avoid party, nightlife, "
+        "drinking, or overtly social/upbeat imagery, even if the poem "
         "mentions something adjacent - keep the mood reflective and "
         "solitary.\n\nPoem:\n" + poem_text
     )
