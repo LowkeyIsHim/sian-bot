@@ -7,7 +7,7 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes, CommandHandler
 
 import access
-from branding import framed
+from branding import header
 
 
 def _parse_user_id(args: list[str]) -> int | None:
@@ -81,7 +81,7 @@ async def list_access_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     granted_lines = [await _describe_user(context, uid) for uid in data["granted"]] or ["_none_"]
 
     text = (
-        f"{framed('access list')}\n\n"
+        f"{header('access list')}\n\n"
         "*creators*\n" + "\n".join(f"• {line}" for line in creator_lines) + "\n\n"
         "*granted*\n" + "\n".join(f"• {line}" for line in granted_lines)
     )
