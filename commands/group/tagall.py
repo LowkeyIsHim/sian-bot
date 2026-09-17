@@ -8,7 +8,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 
 import access
-from commands.member_tracker import get_members
+from commands.group.member_tracker import get_members
 
 CHUNK_SIZE = 50  # keep each message a reasonable length/entity count
 
