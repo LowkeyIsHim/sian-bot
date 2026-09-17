@@ -3,9 +3,11 @@
 """
 
 from telegram import Update
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes, CommandHandler
 
 import access
+from branding import framed
 
 
 def _parse_user_id(args: list[str]) -> int | None:
@@ -53,6 +55,20 @@ async def revoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
 
+async def _describe_user(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> str:
+    """Best-effort: returns a clickable Markdown mention if the bot can
+    resolve the user (needs the bot to have seen them before, e.g. they've
+    messaged it at least once) - otherwise just the raw ID."""
+    try:
+        chat = await context.bot.get_chat(user_id)
+        if chat.username:
+            return f"[@{chat.username}](https://t.me/{chat.username})"
+        name = chat.first_name or "user"
+        return f"[{name}](tg://user?id={user_id})"
+    except TelegramError:
+        return str(user_id)
+
+
 async def list_access_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if not access.is_creator(user_id):
@@ -60,11 +76,16 @@ async def list_access_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     data = access.list_access()
-    lines = ["Creators:"]
-    lines += [f"  {uid}" for uid in data["creators"]]
-    lines.append("Granted:")
-    lines += [f"  {uid}" for uid in data["granted"]] or ["  (none)"]
-    await update.message.reply_text("\n".join(lines))
+
+    creator_lines = [await _describe_user(context, uid) for uid in data["creators"]]
+    granted_lines = [await _describe_user(context, uid) for uid in data["granted"]] or ["_none_"]
+
+    text = (
+        f"{framed('access list')}\n\n"
+        "*creators*\n" + "\n".join(f"• {line}" for line in creator_lines) + "\n\n"
+        "*granted*\n" + "\n".join(f"• {line}" for line in granted_lines)
+    )
+    await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
 
 
 def register(app) -> None:
