@@ -18,15 +18,23 @@ from commands import (
     access_commands,
     chat,
     developer,
-    group_admin_commands,
     help as help_cmd,
-    member_tracker,
     poem,
     reset,
     start,
     story,
-    tagall,
     whoami,
+)
+from commands.group import (
+    flood_guard,
+    group_admin_commands,
+    group_menu,
+    link_guard,
+    member_tracker,
+    moderation,
+    settings as group_settings,
+    tagall,
+    word_guard,
 )
 
 logging.basicConfig(
@@ -47,7 +55,13 @@ COMMAND_MODULES = [
     developer,
     access_commands,
     group_admin_commands,
+    group_menu,
     tagall,
+    moderation,
+    group_settings,
+    flood_guard,
+    link_guard,
+    word_guard,
     member_tracker,
     chat,
 ]
@@ -69,6 +83,17 @@ MENU_COMMANDS = [
     BotCommand("gadmin", "Grant group admin access (creators only)"),
     BotCommand("ungadmin", "Revoke group admin access (creators only)"),
     BotCommand("gadminlist", "List group admins (creators only)"),
+    BotCommand("gmenu", "Group tools overview"),
+    BotCommand("mute", "Mute a member (reply to their message)"),
+    BotCommand("unmute", "Unmute a member (reply to their message)"),
+    BotCommand("ban", "Ban a member (reply to their message)"),
+    BotCommand("unban", "Unban a member by ID"),
+    BotCommand("warn", "Warn a member (reply to their message)"),
+    BotCommand("clearwarns", "Clear a member's warnings"),
+    BotCommand("warnings", "Check a member's warning count"),
+    BotCommand("antiflood", "Configure flood protection (group admins only)"),
+    BotCommand("antilink", "Configure link protection (group admins only)"),
+    BotCommand("antiword", "Configure banned words (group admins only)"),
 ]
 
 BOT_SHORT_DESCRIPTION = "Poems, stories, and conversation - written the way Goddess would write them."
