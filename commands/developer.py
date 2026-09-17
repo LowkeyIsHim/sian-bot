@@ -5,14 +5,13 @@
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 
-from branding import LINE
+from branding import header
 
 DEVELOPER_TEXT = (
-    f"{LINE}\n"
-    "built by lowkey\n"
-    f"{LINE}\n\n"
+    f"{header('the person behind this')}\n\n"
+    "built by *lowkey*\n\n"
     "telegram: [@Im\\_just\\_l0wkey](https://t.me/Im_just_l0wkey)\n\n"
-    "reach out for bugs, feature ideas, or just to say hi."
+    "_reach out for bugs, feature ideas, or just to say hi._"
 )
 
 
