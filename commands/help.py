@@ -6,21 +6,25 @@ from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 
 import access
-from branding import header
+from branding import header, LINE, DOT_DIVIDER
 
 HELP_TEXT = (
     f"{header('menu')}\n\n"
-    "✒️ /poem `[theme]`\n"
-    "   → a poem, written the way i would\n\n"
-    "📖 /story `[theme]`\n"
-    "   → a short story, quiet and internal\n\n"
-    "🕊️ /reset\n"
-    "   → clear the page, start fresh\n\n"
-    "🪶 /whoami\n"
-    "   → see your telegram id\n\n"
-    "🛠️ /developer\n"
-    "   → who built me\n\n"
-    "───────────────\n"
+    "*/poem* `[theme]`\n"
+    "_a poem, written the way i would_\n\n"
+    f"{DOT_DIVIDER}\n\n"
+    "*/story* `[theme]`\n"
+    "_a short story, quiet and internal_\n\n"
+    f"{DOT_DIVIDER}\n\n"
+    "*/reset*\n"
+    "_clear the page, start fresh_\n\n"
+    f"{DOT_DIVIDER}\n\n"
+    "*/whoami*\n"
+    "_see your telegram id_\n\n"
+    f"{DOT_DIVIDER}\n\n"
+    "*/developer*\n"
+    "_who built me_\n\n"
+    f"{LINE}\n\n"
     "or just talk to me like a person.\n"
     "no command needed for that."
 )
