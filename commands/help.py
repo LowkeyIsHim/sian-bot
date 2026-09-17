@@ -5,7 +5,6 @@
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 
-import access
 from branding import header, LINE, DOT_DIVIDER
 
 HELP_TEXT = (
@@ -31,9 +30,6 @@ HELP_TEXT = (
 
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not access.has_access(update.effective_user.id):
-        await update.message.reply_text("You don't have access to this bot.")
-        return
     await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
 
 
