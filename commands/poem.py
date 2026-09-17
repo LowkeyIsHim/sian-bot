@@ -10,7 +10,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 
 import access
-from ai import ask_sian, get_image_search_phrase
+from ai import ask_sian, get_image_search_phrase, split_title
 from photos import get_matching_photo_url
 
 logger = logging.getLogger(__name__)
@@ -35,13 +35,18 @@ async def poem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Something went wrong on my end. Try again in a moment.")
         return
 
-    await update.message.reply_text(reply)
+    title, body = split_title(reply)
+    if title:
+        await update.message.reply_text(f"✒️ *{title}*", parse_mode="Markdown")
+        await update.message.reply_text(body)
+    else:
+        await update.message.reply_text(reply)
 
     # Best-effort: pair the poem with a matching aesthetic photo. If this
     # fails for any reason (no Pexels key, no results, network hiccup),
     # the poem has already been sent - we just skip the photo silently.
     try:
-        query = get_image_search_phrase(reply)
+        query = get_image_search_phrase(body)
         photo_url = get_matching_photo_url(query)
         if photo_url:
             await update.message.reply_photo(photo=photo_url)
