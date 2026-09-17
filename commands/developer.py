@@ -5,10 +5,12 @@
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 
-from branding import framed
+from branding import LINE
 
 DEVELOPER_TEXT = (
-    f"{framed('built by lowkey')}\n\n"
+    f"{LINE}\n"
+    "built by lowkey\n"
+    f"{LINE}\n\n"
     "telegram: [@Im\\_just\\_l0wkey](https://t.me/Im_just_l0wkey)\n\n"
     "reach out for bugs, feature ideas, or just to say hi."
 )
