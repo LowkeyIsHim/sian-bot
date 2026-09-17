@@ -7,7 +7,7 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes, CommandHandler
 
 import access
-from branding import header
+from branding import header, DOT_DIVIDER
 
 
 def _parse_user_id(args: list[str]) -> int | None:
@@ -83,6 +83,7 @@ async def list_access_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     text = (
         f"{header('access list')}\n\n"
         "*creators*\n" + "\n".join(f"• {line}" for line in creator_lines) + "\n\n"
+        f"{DOT_DIVIDER}\n\n"
         "*granted*\n" + "\n".join(f"• {line}" for line in granted_lines)
     )
     await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
