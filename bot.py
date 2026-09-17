@@ -50,11 +50,15 @@ COMMAND_MODULES = [
 MENU_COMMANDS = [
     BotCommand("start", "Say hello"),
     BotCommand("help", "See what I can do"),
+    BotCommand("menu", "See what I can do"),
     BotCommand("poem", "Ask for a poem"),
     BotCommand("story", "Ask for a short story"),
     BotCommand("reset", "Clear our conversation"),
     BotCommand("whoami", "Get your Telegram ID"),
     BotCommand("developer", "Who built this bot"),
+    BotCommand("access", "Grant access (creators only)"),
+    BotCommand("revoke", "Revoke access (creators only)"),
+    BotCommand("listaccess", "List who has access (creators only)"),
 ]
 
 BOT_SHORT_DESCRIPTION = "Poems, stories, and conversation - written the way Goddess would write them."
