@@ -8,7 +8,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 
 import access
-from ai import ask_sian
+from ai import ask_sian, split_title
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +28,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         reply = ask_sian(chat_id, user_text)
     except Exception:
         logger.exception("Error calling AI")
-        reply = "Something went wrong on my end. Try again in a moment."
+        await update.message.reply_text("Something went wrong on my end. Try again in a moment.")
+        return
 
-    await update.message.reply_text(reply)
+    title, body = split_title(reply)
+    if title:
+        await update.message.reply_text(f"✒️ *{title}*", parse_mode="Markdown")
+        await update.message.reply_text(body)
+    else:
+        await update.message.reply_text(reply)
 
 
 def register(app) -> None:
