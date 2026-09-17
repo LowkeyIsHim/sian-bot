@@ -8,12 +8,12 @@ from telegram.ext import ContextTypes, CommandHandler
 import access
 
 WELCOME_MESSAGE = (
-    "🕊️ *Hi. I'm Sian.*\n\n"
+    "🕊️ *Hi. I'm Goddess.*\n\n"
     "I turn what I carry into words — poems, stories, or just a conversation, "
     "if that's what you need today.\n\n"
     "Tap the ☰ menu next to this chat to see what I can do, "
     "or just start typing. No need to perform anything here.\n\n"
-    "✒️ _brought into being by_ [Lowkey](https://t.me/Im_just_l0wkey)"
+    "✒️ _brought into being with love by_ [Lowkey](https://t.me/Im_just_l0wkey)"
 )
 
 
