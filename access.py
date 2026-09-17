@@ -2,8 +2,15 @@
 Access control for the bot.
 
 Tiers:
-  - CREATOR: hardcoded, permanent, can't be revoked via commands
-  - GRANTED: added via /access, removable via /revoke
+  - CREATOR: hardcoded (via CREATOR_IDS env var), permanent, has every
+    permission everywhere - personal chat features AND group admin features.
+  - GRANTED: added via /access, removable via /revoke. Lets someone use
+    the bot's personal features (poems, stories, chat) in DM. Does NOT
+    grant group admin powers - those are a completely separate tier.
+  - GROUP_ADMIN: added via /gadmin, removable via /ungadmin. Lets someone
+    use group-moderation features (tag-all, spam controls, etc.) in any
+    group the bot is in. Having /access does not imply this, and having
+    this does not imply /access - they're independent.
 
 Persistence:
   access_list.json is stored ONE FOLDER ABOVE this file (i.e. outside
@@ -39,9 +46,12 @@ CREATOR_IDS = _parse_creator_ids()
 
 def _load() -> dict:
     if not os.path.exists(ACCESS_FILE):
-        return {"granted": []}
+        return {"granted": [], "group_admins": []}
     with open(ACCESS_FILE, "r") as f:
-        return json.load(f)
+        data = json.load(f)
+    data.setdefault("granted", [])
+    data.setdefault("group_admins", [])
+    return data
 
 
 def _save(data: dict) -> None:
@@ -59,19 +69,23 @@ def is_creator(user_id: int) -> bool:
     return user_id in CREATOR_IDS
 
 
+# ---------------------------------------------------------------------------
+# Personal/DM access (poems, stories, chat)
+# ---------------------------------------------------------------------------
+
 def has_access(user_id: int) -> bool:
     if is_creator(user_id):
         return True
     data = _load()
-    return user_id in data.get("granted", [])
+    return user_id in data["granted"]
 
 
 def grant_access(user_id: int) -> bool:
     """Returns True if newly granted, False if already had access."""
     data = _load()
-    if user_id in data.get("granted", []) or is_creator(user_id):
+    if user_id in data["granted"] or is_creator(user_id):
         return False
-    data.setdefault("granted", []).append(user_id)
+    data["granted"].append(user_id)
     _save(data)
     return True
 
@@ -81,10 +95,41 @@ def revoke_access(user_id: int) -> bool:
     if is_creator(user_id):
         return False
     data = _load()
-    granted = data.get("granted", [])
-    if user_id in granted:
-        granted.remove(user_id)
-        data["granted"] = granted
+    if user_id in data["granted"]:
+        data["granted"].remove(user_id)
+        _save(data)
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Group admin access (tag-all, spam controls, moderation)
+# ---------------------------------------------------------------------------
+
+def is_group_admin(user_id: int) -> bool:
+    if is_creator(user_id):
+        return True
+    data = _load()
+    return user_id in data["group_admins"]
+
+
+def grant_group_admin(user_id: int) -> bool:
+    """Returns True if newly granted, False if already had it."""
+    data = _load()
+    if user_id in data["group_admins"] or is_creator(user_id):
+        return False
+    data["group_admins"].append(user_id)
+    _save(data)
+    return True
+
+
+def revoke_group_admin(user_id: int) -> bool:
+    """Returns True if revoked. Creators can never be revoked this way."""
+    if is_creator(user_id):
+        return False
+    data = _load()
+    if user_id in data["group_admins"]:
+        data["group_admins"].remove(user_id)
         _save(data)
         return True
     return False
@@ -94,5 +139,6 @@ def list_access() -> dict:
     data = _load()
     return {
         "creators": list(CREATOR_IDS),
-        "granted": data.get("granted", []),
+        "granted": data["granted"],
+        "group_admins": data["group_admins"],
     }
