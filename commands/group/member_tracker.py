@@ -11,9 +11,8 @@ import os
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__))      # .../bot_src/commands
-_BOT_SRC_DIR = os.path.dirname(_THIS_DIR)                    # .../bot_src
-_PERSISTENT_DIR = os.path.dirname(_BOT_SRC_DIR)              # one above bot_src, survives updates
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))                          # .../bot_src/commands/group
+_PERSISTENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(_THIS_DIR)))  # one above bot_src
 MEMBERS_FILE = os.path.join(_PERSISTENT_DIR, "group_members.json")
 
 
@@ -52,7 +51,4 @@ async def _track(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 def register(app) -> None:
-    # Registered in a separate handler group (PTB's internal concept, not
-    # a Telegram group) so it runs alongside other handlers rather than
-    # stealing the update from them.
     app.add_handler(MessageHandler(filters.ChatType.GROUPS, _track), group=1)
