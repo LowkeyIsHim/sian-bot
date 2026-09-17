@@ -8,7 +8,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 
 import access
-from ai import ask_sian, split_title
+from ai import ask_sian, split_title, RateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,9 @@ async def story(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     try:
         reply = ask_sian(chat_id, prompt)
+    except RateLimitError:
+        await update.message.reply_text("i need a moment to catch my breath — try again shortly.")
+        return
     except Exception:
         logger.exception("Error generating story")
         await update.message.reply_text("Something went wrong on my end. Try again in a moment.")
