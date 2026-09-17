@@ -6,14 +6,17 @@ from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 
 import access
+from branding import framed, BOT_NAME, DIVIDER
 
 WELCOME_MESSAGE = (
-    "🕊️ *Hi. I'm Goddess.*\n\n"
-    "I turn what I carry into words — poems, stories, or just a conversation, "
+    f"{framed(BOT_NAME)}\n\n"
+    "hi. i'm goddess.\n\n"
+    "i turn what i carry into words — poems, stories, or just a conversation, "
     "if that's what you need today.\n\n"
-    "Tap the ☰ menu next to this chat to see what I can do, "
-    "or just start typing. No need to perform anything here.\n\n"
-    "✒️ _brought into being with love by_ [Lowkey](https://t.me/Im_just_l0wkey)"
+    f"{DIVIDER}\n\n"
+    "tap the ☰ menu next to this chat to see what i can do, "
+    "or just start typing. no need to perform anything here.\n\n"
+    "✒️ _brought into being by_ [lowkey](https://t.me/Im_just_l0wkey)"
 )
 
 
