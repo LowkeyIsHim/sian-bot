@@ -75,6 +75,20 @@ def reset_history(chat_id: int) -> None:
     _conversations.pop(chat_id, None)
 
 
+TITLE_PREFIX = "TITLE:"
+
+
+def split_title(text: str) -> tuple[str | None, str]:
+    """If the reply starts with a 'TITLE: ...' line, splits it off and
+    returns (title, remaining_body). Otherwise returns (None, text)."""
+    if text.startswith(TITLE_PREFIX):
+        first_line, _, rest = text.partition("\n")
+        title = first_line[len(TITLE_PREFIX):].strip()
+        body = rest.lstrip("\n")
+        return title, body
+    return None, text
+
+
 def get_image_search_phrase(poem_text: str) -> str:
     """One-off call (not part of the ongoing conversation) that reads a
     finished poem and returns a short aesthetic photo search phrase to
