@@ -97,7 +97,11 @@ def get_image_search_phrase(poem_text: str) -> str:
         "Read this poem and output ONLY a short photo search phrase "
         "(3-6 words, no punctuation, no explanation) describing the kind "
         "of moody, soft, aesthetic photograph that would pair well with "
-        "it on a poetry page.\n\nPoem:\n" + poem_text
+        "it on a poetry page - think solitary figures, quiet interiors, "
+        "melancholic natural light, muted tones. Avoid party, nightlife, "
+        "drinking, or overtly social/upbeat imagery, even if the poem "
+        "mentions something adjacent - keep the mood reflective and "
+        "solitary.\n\nPoem:\n" + poem_text
     )
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
