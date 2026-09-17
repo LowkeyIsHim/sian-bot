@@ -99,7 +99,7 @@ def get_image_search_phrase(poem_text: str) -> str:
         "of moody, soft, aesthetic photograph that would pair well with "
         "it on a poetry page - think solitary figures, quiet interiors, "
         "melancholic natural light, muted tones. Avoid party, "
-        "drinking, or overtly social/upbeat imagery, even if the poem "
+        "or overtly social/upbeat imagery, even if the poem "
         "mentions something adjacent - keep the mood reflective and "
         "solitary.\n\nPoem:\n" + poem_text
     )
