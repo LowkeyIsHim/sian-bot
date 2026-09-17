@@ -18,11 +18,14 @@ from commands import (
     access_commands,
     chat,
     developer,
+    group_admin_commands,
     help as help_cmd,
+    member_tracker,
     poem,
     reset,
     start,
     story,
+    tagall,
     whoami,
 )
 
@@ -43,6 +46,9 @@ COMMAND_MODULES = [
     whoami,
     developer,
     access_commands,
+    group_admin_commands,
+    tagall,
+    member_tracker,
     chat,
 ]
 
@@ -59,6 +65,10 @@ MENU_COMMANDS = [
     BotCommand("access", "Grant access (creators only)"),
     BotCommand("revoke", "Revoke access (creators only)"),
     BotCommand("listaccess", "List who has access (creators only)"),
+    BotCommand("tagall", "Mention everyone in a group (group admins only)"),
+    BotCommand("gadmin", "Grant group admin access (creators only)"),
+    BotCommand("ungadmin", "Revoke group admin access (creators only)"),
+    BotCommand("gadminlist", "List group admins (creators only)"),
 ]
 
 BOT_SHORT_DESCRIPTION = "Poems, stories, and conversation - written the way Goddess would write them."
