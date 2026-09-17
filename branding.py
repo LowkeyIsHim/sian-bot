@@ -6,7 +6,7 @@ Uses plain line-drawing characters (widely supported on every device) rather
 than rare symbols that can render as blank boxes on some phones.
 """
 
-BOT_NAME = "𝐆𝐎𝐃𝐃𝐄𝐒𝐒"
+BOT_NAME = "𓆩𝐆𝐎𝐃𝐃𝐄𝐒𝐒𓆪"
 LINE = "───────────────"
 
 
