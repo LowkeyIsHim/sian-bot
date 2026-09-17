@@ -57,9 +57,9 @@ MENU_COMMANDS = [
     BotCommand("developer", "Who built this bot"),
 ]
 
-BOT_SHORT_DESCRIPTION = "Poems, stories, and conversation - written the way Sian would write them."
+BOT_SHORT_DESCRIPTION = "Poems, stories, and conversation - written the way Goddess would write them."
 BOT_DESCRIPTION = (
-    "I'm Sian. I write poems and short stories the way I actually would - "
+    "I'm Goddess. I write poems and short stories the way I actually would - "
     "raw, imagery-heavy, and always finding a thread of resilience. "
     "Talk to me, or use /help to see what I can do."
 )
