@@ -50,4 +50,4 @@ async def _check_flood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 def register(app) -> None:
-    app.add_handler(MessageHandler(filters.ChatType.GROUPS, _check_flood), group=1)
+    app.add_handler(MessageHandler(filters.ChatType.GROUPS, _check_flood), group=2)
