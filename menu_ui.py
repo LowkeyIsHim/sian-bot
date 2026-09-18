@@ -5,7 +5,7 @@ sending a new message each time.
 """
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
+from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, filters
 
 from ai import reset_history
 from branding import header
@@ -52,6 +52,9 @@ def _back_keyboard() -> InlineKeyboardMarkup:
 
 
 async def menu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_chat.type != "private":
+        await update.message.reply_text("This is for DM - try /gmenu here instead.")
+        return
     await update.message.reply_text(MAIN_TEXT, parse_mode="Markdown", reply_markup=_main_keyboard())
 
 
@@ -81,6 +84,6 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 def register(app) -> None:
-    app.add_handler(CommandHandler("help", menu_cmd))
-    app.add_handler(CommandHandler("menu", menu_cmd))
+    app.add_handler(CommandHandler("help", menu_cmd, filters=filters.ChatType.PRIVATE))
+    app.add_handler(CommandHandler("menu", menu_cmd, filters=filters.ChatType.PRIVATE))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^m:"))
