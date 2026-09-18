@@ -51,13 +51,14 @@ async def _track(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     chat_id = update.effective_chat.id
-    existing = get_members(chat_id)
-    is_new = str(user.id) not in existing
-
     record_member(chat_id, user.id, user.username, user.first_name)
 
-    if is_new:
-        await refresh_group_menu(context.bot, chat_id, user.id)
+    # Always re-sync, not just for new members: Telegram caches whatever
+    # menu was last set for a scope, even across restarts, so anyone
+    # tracked before this feature existed would otherwise be stuck with
+    # a stale menu forever. This keeps everyone's menu accurate as their
+    # permissions change (promote/demote, gadmin, etc).
+    await refresh_group_menu(context.bot, chat_id, user.id)
 
 
 def register(app) -> None:
