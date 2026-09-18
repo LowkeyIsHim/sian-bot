@@ -90,6 +90,7 @@ async def demote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     chat_id = update.effective_chat.id
+    telegram_error = None
     try:
         await context.bot.promote_chat_member(
             chat_id, target.id,
@@ -100,12 +101,23 @@ async def demote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             can_manage_chat=False,
         )
     except TelegramError as e:
-        await update.message.reply_text(f"Couldn't demote them: {e}")
-        return
+        telegram_error = str(e)
 
+    # Always clear our own internal record, even if the Telegram-side API
+    # call failed - otherwise a failed demote can leave someone stuck
+    # permanently exempt from moderation with no way to fix it except
+    # editing access_list.json by hand.
     access.revoke_group_admin(target.id)
     await refresh_group_menu(context.bot, chat_id, target.id)
-    await update.message.reply_text(f"{target.first_name} is no longer a group admin.")
+
+    if telegram_error:
+        await update.message.reply_text(
+            f"Removed {target.first_name}'s bot admin access. Couldn't update "
+            f"their real Telegram admin status ({telegram_error}) - if they "
+            f"still show as admin in Telegram, remove that manually in Group Info."
+        )
+    else:
+        await update.message.reply_text(f"{target.first_name} is no longer a group admin.")
 
 
 async def _describe_admin(member) -> str:
