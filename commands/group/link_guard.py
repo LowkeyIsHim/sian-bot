@@ -4,12 +4,15 @@ in message text or entities, when antilink is enabled for the group.
 """
 
 import re
+import logging
 
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 
 from commands.group.enforcement import enforce, is_exempt
 from commands.group.settings import get_rule
+
+logger = logging.getLogger(__name__)
 
 URL_PATTERN = re.compile(
     r"(https?://\S+|www\.\S+|t\.me/\S+|\S+\.(com|net|org|io|xyz|gg|ru|info)\b)",
@@ -37,14 +40,17 @@ async def _check_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     rule = get_rule(chat.id, "antilink")
     if not rule["enabled"]:
+        logger.info(f"antilink not enabled in {chat.id}, skipping")
         return
 
     if not _contains_link(message):
         return
 
     if await is_exempt(context, chat.id, user.id):
+        logger.info(f"antilink: {user.id} is exempt in {chat.id}, skipping")
         return
 
+    logger.info(f"antilink: enforcing against {user.id} in {chat.id}")
     await enforce(context, chat.id, user.id, message.message_id, "antilink", rule, "posting a link")
 
 
