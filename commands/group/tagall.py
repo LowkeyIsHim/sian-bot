@@ -19,8 +19,7 @@ async def tagall(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if not access.is_group_admin(update.effective_user.id):
-        await update.message.reply_text("You don't have access to this bot.")
-        return
+        return  # silent
 
     members = get_members(update.effective_chat.id)
     if not members:
