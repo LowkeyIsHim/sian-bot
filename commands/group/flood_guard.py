@@ -5,6 +5,7 @@ losing the counters on a restart is fine, they rebuild within seconds.
 """
 
 import time
+import logging
 from collections import defaultdict, deque
 
 from telegram import Update
@@ -12,6 +13,8 @@ from telegram.ext import ContextTypes, MessageHandler, filters
 
 from commands.group.enforcement import enforce, is_exempt
 from commands.group.settings import get_rule
+
+logger = logging.getLogger(__name__)
 
 FLOOD_WINDOW_SECONDS = 10
 FLOOD_LIMIT = 10
@@ -28,9 +31,11 @@ async def _check_flood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     rule = get_rule(chat.id, "antiflood")
     if not rule["enabled"]:
+        logger.info(f"antiflood not enabled in {chat.id}, skipping")
         return
 
     if await is_exempt(context, chat.id, user.id):
+        logger.info(f"antiflood: {user.id} is exempt in {chat.id}, skipping")
         return
 
     key = (chat.id, user.id)
@@ -43,6 +48,7 @@ async def _check_flood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     if len(timestamps) >= FLOOD_LIMIT:
         timestamps.clear()
+        logger.info(f"antiflood: enforcing against {user.id} in {chat.id}")
         await enforce(
             context, chat.id, user.id, update.message.message_id,
             "antiflood", rule, f"sending {FLOOD_LIMIT}+ messages in {FLOOD_WINDOW_SECONDS}s",
