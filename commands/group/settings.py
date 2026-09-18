@@ -30,6 +30,7 @@ _PERSISTENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(_THIS_DIR)))  
 SETTINGS_FILE = os.path.join(_PERSISTENT_DIR, "group_settings.json")
 
 VALID_ACTIONS = {"delete", "warn", "mute", "ban"}
+ACTION_CYCLE = ["delete", "warn", "mute", "ban"]
 DEFAULT_RULE = {"enabled": False, "action": "delete", "warn_limit": 3, "mute_minutes": 10}
 
 
@@ -112,6 +113,20 @@ async def _delete_later(bot, chat_id: int, message_ids: list[int]) -> None:
             await bot.delete_message(chat_id, mid)
         except TelegramError:
             pass
+
+
+def set_enabled(chat_id: int, kind: str, enabled: bool) -> None:
+    _set_field(chat_id, kind, "enabled", enabled)
+
+
+def cycle_action(chat_id: int, kind: str) -> str:
+    """Cycles delete -> warn -> mute -> ban -> delete. Returns the new action."""
+    rule = get_rule(chat_id, kind)
+    current = rule.get("action", "delete")
+    idx = ACTION_CYCLE.index(current) if current in ACTION_CYCLE else 0
+    new_action = ACTION_CYCLE[(idx + 1) % len(ACTION_CYCLE)]
+    _set_field(chat_id, kind, "action", new_action)
+    return new_action
 
 
 def _make_settings_command(kind: str):
