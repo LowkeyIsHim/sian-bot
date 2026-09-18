@@ -5,10 +5,14 @@ Telegram lets set_my_commands be scoped per-chat or per-member-of-a-chat,
 which is what makes this possible.
 """
 
+import logging
+
 from telegram import BotCommand, BotCommandScopeChat, BotCommandScopeChatMember
 from telegram.error import TelegramError
 
 import access
+
+logger = logging.getLogger(__name__)
 
 PUBLIC_COMMANDS = [
     BotCommand("start", "Say hello"),
@@ -74,8 +78,8 @@ async def refresh_private_menu(bot, user_id: int) -> None:
         commands += PERSONAL_COMMANDS
     try:
         await bot.set_my_commands(_dedupe(commands), scope=BotCommandScopeChat(chat_id=user_id))
-    except TelegramError:
-        pass
+    except TelegramError as e:
+        logger.warning(f"Could not set private menu for {user_id}: {e}")
 
 
 async def refresh_group_menu(bot, chat_id: int, user_id: int) -> None:
@@ -89,5 +93,5 @@ async def refresh_group_menu(bot, chat_id: int, user_id: int) -> None:
         await bot.set_my_commands(
             _dedupe(commands), scope=BotCommandScopeChatMember(chat_id=chat_id, user_id=user_id)
         )
-    except TelegramError:
-        pass
+    except TelegramError as e:
+        logger.warning(f"Could not set group menu for {user_id} in {chat_id}: {e}")
