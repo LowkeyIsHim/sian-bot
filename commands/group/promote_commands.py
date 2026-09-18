@@ -25,6 +25,13 @@ def _get_target(update: Update):
     return None
 
 
+def _is_anonymous_admin_post(user) -> bool:
+    """Messages sent by an admin with 'remain anonymous' turned on show up
+    as this system account, not the real user - Telegram can't resolve a
+    real user ID from it, which is what causes USER_ID_INVALID."""
+    return user.username == "GroupAnonymousBot" or user.id == 1087968824
+
+
 async def promote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_chat.type not in ("group", "supergroup"):
         return
@@ -34,6 +41,14 @@ async def promote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     target = _get_target(update)
     if not target:
         await update.message.reply_text("Reply to the message of the person you want to promote.")
+        return
+    if _is_anonymous_admin_post(target):
+        await update.message.reply_text(
+            "Can't target that - they posted with 'remain anonymous' on, so "
+            "Telegram won't tell me who they really are. Ask them to turn "
+            "that off and post again, or promote them directly in Telegram's "
+            "own admin settings."
+        )
         return
 
     chat_id = update.effective_chat.id
@@ -64,6 +79,14 @@ async def demote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     target = _get_target(update)
     if not target:
         await update.message.reply_text("Reply to the message of the person you want to demote.")
+        return
+    if _is_anonymous_admin_post(target):
+        await update.message.reply_text(
+            "Can't target that - they posted with 'remain anonymous' on, so "
+            "Telegram won't tell me who they really are. Ask them to turn "
+            "that off and post again, or demote them directly in Telegram's "
+            "own admin settings."
+        )
         return
 
     chat_id = update.effective_chat.id
