@@ -9,6 +9,13 @@ To add a new feature: create a new file in commands/ (or commands/group/
 for group-only features) with an async handler and a register(app)
 function, add it to COMMAND_MODULES below, and add its BotCommand entry
 to the relevant list in menus.py.
+
+IMPORTANT: any passive MessageHandler registered with the SAME filter
+(e.g. filters.ChatType.GROUPS) must use a DIFFERENT PTB handler group
+number in its own register(app) call - PTB only runs one handler per
+group per update, so identical filters in the same group silently mask
+each other. member_tracker/flood_guard/link_guard/word_guard each use
+their own group number (1-4) for exactly this reason.
 """
 
 import logging
