@@ -24,12 +24,12 @@ import os
 from telegram.ext import Application
 
 import access
+import menu_ui
 from menus import PUBLIC_COMMANDS, refresh_private_menu
 from commands import (
     access_commands,
     chat,
     developer,
-    help as help_cmd,
     poem,
     reset,
     start,
@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 # Order matters only in that "chat" (the freeform catch-all) should stay last.
 COMMAND_MODULES = [
     start,
-    help_cmd,
+    menu_ui,
     poem,
     story,
     reset,
