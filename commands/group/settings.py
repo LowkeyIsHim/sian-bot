@@ -15,10 +15,12 @@ Each rule has the same shape:
 antiword additionally stores its own "words" list.
 """
 
+import asyncio
 import json
 import os
 
 from telegram import Update
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes, CommandHandler
 
 import access
@@ -100,6 +102,18 @@ def _format_rule(kind: str, rule: dict) -> str:
     return "\n".join(lines)
 
 
+AUTO_DELETE_SECONDS = 5
+
+
+async def _delete_later(bot, chat_id: int, message_ids: list[int]) -> None:
+    await asyncio.sleep(AUTO_DELETE_SECONDS)
+    for mid in message_ids:
+        try:
+            await bot.delete_message(chat_id, mid)
+        except TelegramError:
+            pass
+
+
 def _make_settings_command(kind: str):
     """Builds a /antiflood, /antilink, or /antiword command handler -
     they all share the same on/off/action/limit mechanics."""
@@ -109,46 +123,51 @@ def _make_settings_command(kind: str):
             await update.message.reply_text("This only works inside a group.")
             return
         if not access.is_group_admin(update.effective_user.id):
-            await update.message.reply_text("You don't have access to this bot.")
-            return
+            return  # silent - don't confirm to randoms that this exists
 
         chat_id = update.effective_chat.id
         args = context.args
 
+        async def reply(text: str, **kwargs) -> None:
+            sent = await update.message.reply_text(text, **kwargs)
+            asyncio.create_task(
+                _delete_later(context.bot, chat_id, [update.message.message_id, sent.message_id])
+            )
+
         if not args or args[0] == "status":
             rule = get_rule(chat_id, kind)
-            await update.message.reply_text(_format_rule(kind, rule), parse_mode="Markdown")
+            await reply(_format_rule(kind, rule), parse_mode="Markdown")
             return
 
         sub = args[0].lower()
 
         if sub == "on":
             _set_field(chat_id, kind, "enabled", True)
-            await update.message.reply_text(f"{kind} enabled.")
+            await reply(f"{kind} enabled.")
         elif sub == "off":
             _set_field(chat_id, kind, "enabled", False)
-            await update.message.reply_text(f"{kind} disabled.")
+            await reply(f"{kind} disabled.")
         elif sub == "action" and len(args) > 1 and args[1].lower() in VALID_ACTIONS:
             _set_field(chat_id, kind, "action", args[1].lower())
-            await update.message.reply_text(f"{kind} action set to {args[1].lower()}.")
+            await reply(f"{kind} action set to {args[1].lower()}.")
         elif sub == "warnlimit" and len(args) > 1 and args[1].isdigit():
             _set_field(chat_id, kind, "warn_limit", int(args[1]))
-            await update.message.reply_text(f"{kind} warn limit set to {args[1]}.")
+            await reply(f"{kind} warn limit set to {args[1]}.")
         elif sub == "muteminutes" and len(args) > 1 and args[1].isdigit():
             _set_field(chat_id, kind, "mute_minutes", int(args[1]))
-            await update.message.reply_text(f"{kind} mute duration set to {args[1]} minutes.")
+            await reply(f"{kind} mute duration set to {args[1]} minutes.")
         elif kind == "antiword" and sub == "addword" and len(args) > 1:
             word = " ".join(args[1:])
             if add_word(chat_id, word):
-                await update.message.reply_text(f"Added \"{word}\" to the banned word list.")
+                await reply(f"Added \"{word}\" to the banned word list.")
             else:
-                await update.message.reply_text(f"\"{word}\" is already on the list.")
+                await reply(f"\"{word}\" is already on the list.")
         elif kind == "antiword" and sub == "removeword" and len(args) > 1:
             word = " ".join(args[1:])
             if remove_word(chat_id, word):
-                await update.message.reply_text(f"Removed \"{word}\" from the banned word list.")
+                await reply(f"Removed \"{word}\" from the banned word list.")
             else:
-                await update.message.reply_text(f"\"{word}\" wasn't on the list.")
+                await reply(f"\"{word}\" wasn't on the list.")
         else:
             usage = [
                 f"/{kind} status",
@@ -160,7 +179,7 @@ def _make_settings_command(kind: str):
             ]
             if kind == "antiword":
                 usage += [f"/{kind} addword <word>", f"/{kind} removeword <word>"]
-            await update.message.reply_text("Usage:\n" + "\n".join(usage))
+            await reply("Usage:\n" + "\n".join(usage))
 
     return handler
 
