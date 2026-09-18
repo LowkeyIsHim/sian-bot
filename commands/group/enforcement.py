@@ -5,12 +5,15 @@ whatever escalation the group's settings call for.
 """
 
 import json
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 
 from telegram import ChatPermissions
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
+
+logger = logging.getLogger(__name__)
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PERSISTENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(_THIS_DIR)))
@@ -78,8 +81,8 @@ async def enforce(
     """Deletes the message and applies the configured escalation."""
     try:
         await context.bot.delete_message(chat_id, message_id)
-    except TelegramError:
-        pass  # message may already be gone, or bot lacks delete rights
+    except TelegramError as e:
+        logger.warning(f"Could not delete message in {chat_id}: {e}")
 
     action = rule.get("action", "delete")
 
@@ -90,8 +93,8 @@ async def enforce(
         try:
             await context.bot.ban_chat_member(chat_id, user_id)
             await context.bot.send_message(chat_id, f"Removed a member for: {reason}.")
-        except TelegramError:
-            pass
+        except TelegramError as e:
+            logger.warning(f"Could not ban {user_id} in {chat_id}: {e}")
         return
 
     if action == "mute":
@@ -106,8 +109,8 @@ async def enforce(
             await context.bot.send_message(
                 chat_id, f"Muted a member for {minutes} minute(s) - {reason}."
             )
-        except TelegramError:
-            pass
+        except TelegramError as e:
+            logger.warning(f"Could not mute {user_id} in {chat_id}: {e}")
         return
 
     if action == "warn":
@@ -119,8 +122,8 @@ async def enforce(
                 await context.bot.send_message(
                     chat_id, f"Member reached {count}/{limit} warnings ({reason}) and was removed."
                 )
-            except TelegramError:
-                pass
+            except TelegramError as e:
+                logger.warning(f"Could not ban {user_id} in {chat_id} after warn limit: {e}")
             clear_warnings(chat_id, user_id)
         else:
             try:
