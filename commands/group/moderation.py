@@ -23,11 +23,9 @@ def _get_target(update: Update):
 
 async def _check_admin(update: Update) -> bool:
     if update.effective_chat.type not in ("group", "supergroup"):
-        await update.message.reply_text("This only works inside a group.")
         return False
     if not access.is_group_admin(update.effective_user.id):
-        await update.message.reply_text("You don't have access to this bot.")
-        return False
+        return False  # silent - don't confirm to randoms that this command exists
     return True
 
 
