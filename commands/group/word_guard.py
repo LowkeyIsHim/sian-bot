@@ -34,4 +34,4 @@ async def _check_words(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 def register(app) -> None:
-    app.add_handler(MessageHandler(filters.ChatType.GROUPS, _check_words), group=1)
+    app.add_handler(MessageHandler(filters.ChatType.GROUPS, _check_words), group=4)
