@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes, CommandHandler
 
 import access
 from branding import header, DOT_DIVIDER
+from menus import refresh_private_menu
 
 
 def _parse_user_id(args: list[str]) -> int | None:
@@ -22,8 +23,7 @@ def _parse_user_id(args: list[str]) -> int | None:
 async def grant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if not access.is_creator(user_id):
-        await update.message.reply_text("You don't have access to this bot.")
-        return
+        return  # silent
 
     target = _parse_user_id(context.args)
     if target is None:
@@ -31,6 +31,7 @@ async def grant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if access.grant_access(target):
+        await refresh_private_menu(context.bot, target)
         await update.message.reply_text(f"Access granted to {target}.")
     else:
         await update.message.reply_text(f"{target} already has access.")
@@ -39,8 +40,7 @@ async def grant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def revoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if not access.is_creator(user_id):
-        await update.message.reply_text("You don't have access to this bot.")
-        return
+        return  # silent
 
     target = _parse_user_id(context.args)
     if target is None:
@@ -48,6 +48,7 @@ async def revoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if access.revoke_access(target):
+        await refresh_private_menu(context.bot, target)
         await update.message.reply_text(f"Access revoked for {target}.")
     else:
         await update.message.reply_text(
@@ -56,9 +57,6 @@ async def revoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def _describe_user(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> str:
-    """Best-effort: returns a clickable Markdown mention if the bot can
-    resolve the user (needs the bot to have seen them before, e.g. they've
-    messaged it at least once) - otherwise just the raw ID."""
     try:
         chat = await context.bot.get_chat(user_id)
         if chat.username:
@@ -72,8 +70,7 @@ async def _describe_user(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> st
 async def list_access_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if not access.is_creator(user_id):
-        await update.message.reply_text("You don't have access to this bot.")
-        return
+        return  # silent
 
     data = access.list_access()
 
