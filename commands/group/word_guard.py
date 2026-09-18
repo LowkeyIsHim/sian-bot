@@ -3,11 +3,15 @@ Passive banned-word detection - checks message text against the group's
 configured word list when antiword is enabled.
 """
 
+import logging
+
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 
 from commands.group.enforcement import enforce, is_exempt
 from commands.group.settings import get_rule
+
+logger = logging.getLogger(__name__)
 
 
 async def _check_words(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -21,6 +25,7 @@ async def _check_words(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     rule = get_rule(chat.id, "antiword")
     if not rule["enabled"] or not rule.get("words"):
+        logger.info(f"antiword not enabled/no words in {chat.id}, skipping")
         return
 
     text_lower = message.text.lower()
@@ -28,8 +33,10 @@ async def _check_words(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     if await is_exempt(context, chat.id, user.id):
+        logger.info(f"antiword: {user.id} is exempt in {chat.id}, skipping")
         return
 
+    logger.info(f"antiword: enforcing against {user.id} in {chat.id}")
     await enforce(context, chat.id, user.id, message.message_id, "antiword", rule, "using a banned word")
 
 
