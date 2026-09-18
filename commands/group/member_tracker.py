@@ -2,7 +2,7 @@
 Passively records who has posted in each group the bot is in. Telegram's
 Bot API doesn't let bots list a full member list for privacy reasons, so
 /tagall can only ping people this tracker has actually seen post at least
-once. Records nothing, replies nothing - runs silently in the background.
+once. Also gives each newly-seen member a baseline scoped menu.
 """
 
 import json
@@ -10,6 +10,8 @@ import os
 
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
+
+from menus import refresh_group_menu
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))                          # .../bot_src/commands/group
 _PERSISTENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(_THIS_DIR)))  # one above bot_src
@@ -47,7 +49,15 @@ async def _track(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if user is None or user.is_bot:
         return
-    record_member(update.effective_chat.id, user.id, user.username, user.first_name)
+
+    chat_id = update.effective_chat.id
+    existing = get_members(chat_id)
+    is_new = str(user.id) not in existing
+
+    record_member(chat_id, user.id, user.username, user.first_name)
+
+    if is_new:
+        await refresh_group_menu(context.bot, chat_id, user.id)
 
 
 def register(app) -> None:
