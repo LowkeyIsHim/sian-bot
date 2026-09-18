@@ -49,4 +49,4 @@ async def _check_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 def register(app) -> None:
-    app.add_handler(MessageHandler(filters.ChatType.GROUPS, _check_link), group=1)
+    app.add_handler(MessageHandler(filters.ChatType.GROUPS, _check_link), group=3)
