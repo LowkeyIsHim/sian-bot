@@ -102,11 +102,20 @@ async def _post_init(app: Application) -> None:
         await refresh_private_menu(app.bot, creator_id)
 
 
+async def _error_handler(update, context) -> None:
+    """Catches anything a specific handler didn't - so a weird/malformed
+    update from someone trying to break the bot gets logged clearly
+    instead of failing silently somewhere."""
+    logger.error("Unhandled exception while processing an update", exc_info=context.error)
+
+
 def build_app() -> Application:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     app = Application.builder().token(token).post_init(_post_init).build()
 
     for module in COMMAND_MODULES:
         module.register(app)
+
+    app.add_error_handler(_error_handler)
 
     return app
