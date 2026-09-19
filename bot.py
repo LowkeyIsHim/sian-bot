@@ -37,6 +37,7 @@ from commands import (
     whoami,
 )
 from commands.group import (
+    admin_sync,
     flood_guard,
     group_menu,
     link_guard,
@@ -66,6 +67,7 @@ COMMAND_MODULES = [
     developer,
     access_commands,
     promote_commands,
+    admin_sync,
     group_menu,
     tagall,
     moderation,
