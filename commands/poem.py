@@ -12,17 +12,28 @@ from telegram.ext import ContextTypes, CommandHandler
 import access
 from ai import ask_sian, get_image_search_phrase, split_title, RateLimitError
 from photos import get_matching_photo
+from rate_limit import user_is_rate_limited, global_is_rate_limited
 
 logger = logging.getLogger(__name__)
+
+MAX_THEME_LENGTH = 200
 
 
 async def poem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if not access.has_access(user_id):
-        await update.message.reply_text("You don't have access to this bot.")
+        return  # silent
+
+    if user_is_rate_limited(user_id, "ai", limit=5, window_seconds=30):
+        await update.message.reply_text("slow down a little — give me a few seconds.")
+        return
+    if global_is_rate_limited("ai", limit=15, window_seconds=30):
+        await update.message.reply_text("i'm a bit overwhelmed right now — try again in a moment.")
         return
 
     theme = " ".join(context.args) if context.args else None
+    if theme and len(theme) > MAX_THEME_LENGTH:
+        theme = theme[:MAX_THEME_LENGTH]
     prompt = f"Write me a poem about {theme}." if theme else "Write me a poem."
 
     chat_id = update.effective_chat.id
