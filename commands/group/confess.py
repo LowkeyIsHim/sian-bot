@@ -154,7 +154,18 @@ async def confessionlog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
+async def clearconfessionlog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_chat.type != "private":
+        return  # silent - this is sensitive, only ever handle in DM
+    if not access.is_creator(update.effective_user.id):
+        return  # silent
+
+    _save_log({"next_id": 1, "entries": []})
+    await update.message.reply_text("Confession log cleared.")
+
+
 def register(app) -> None:
     app.add_handler(CommandHandler("setconfessions", setconfessions))
     app.add_handler(CommandHandler("confess", confess))
     app.add_handler(CommandHandler("confessionlog", confessionlog))
+    app.add_handler(CommandHandler("clearconfessionlog", clearconfessionlog))
