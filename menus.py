@@ -34,6 +34,7 @@ CREATOR_DM_COMMANDS = [
     BotCommand("access", "Grant access"),
     BotCommand("revoke", "Revoke access"),
     BotCommand("listaccess", "List who has access"),
+    BotCommand("confessionlog", "Private log of who sent each confession"),
 ]
 
 GROUP_PUBLIC_COMMANDS = [
