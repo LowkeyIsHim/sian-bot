@@ -120,20 +120,25 @@ def get_short_quote() -> str:
     payload = {
         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 1.0, "topP": 0.95, "maxOutputTokens": 400},
+        "generationConfig": {"temperature": 1.0, "topP": 0.95, "maxOutputTokens": 2048},
     }
     data = _post_with_retry(payload)
-    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    candidate = data["candidates"][0]
+    if candidate.get("finishReason") == "MAX_TOKENS":
+        print("[ai] WARNING: get_short_quote response was cut off by maxOutputTokens.")
+    return candidate["content"]["parts"][0]["text"].strip()
 
 
-ROAST_PROMPT = """You are generating a comedic "roast battle" style burn - blunt, dark, savage, funny-mean. This is NOT in Goddess's usual poetic voice - drop the poetry entirely. Short, punchy, brutal comedic insults, like a roast battle or a group chat clowning a friend.
+ROAST_PROMPT = """You are generating a comedic "roast battle" style burn - blunt, dark, savage, burn the kitchen, funny-mean. This is NOT in Goddess's usual poetic voice - drop the poetry entirely.
+
+STRICT LENGTH RULE: Maximum ONE, at most TWO sentences. This is a quick burn, not a comedy routine, not a paragraph, not a list of separate jokes. Sharp line that lands hard beats three medium ones. If you're tempted to write more than two sentences, cut it down instead.
 
 Hard limits, never cross these:
 - No slurs, no attacks based on race, ethnicity, religion, gender, sexual orientation, disability, or any protected characteristic.
 - No real threats of violence, no content sexualizing anyone, no targeting appearance in a way that promotes body-shaming as a serious message (jokes about it in a roast-battle context are fine, cruelty as if meant to actually wound someone is not).
 - This is comedy between people who are in on the joke, not real harassment. Stay in "roast battle" territory, not "genuine abuse" territory.
 
-Write 2-4 savage, funny lines roasting the person named below. Blunt, dark humor, no poetic imagery, no softness, no redemptive turn - just burn them (within the limits above)."""
+Write ONE savage, funny burn (1-2 sentences max) roasting the person named below. Blunt, dark humor, no poetic imagery, no softness, no redemptive turn, no preamble, no "here's a roast for you" - just the burn itself and nothing else."""
 
 
 def get_roast(target_name: str) -> str:
@@ -143,10 +148,13 @@ def get_roast(target_name: str) -> str:
     payload = {
         "system_instruction": {"parts": [{"text": ROAST_PROMPT}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 1.05, "topP": 0.95, "maxOutputTokens": 800},
+        "generationConfig": {"temperature": 1.05, "topP": 0.95, "maxOutputTokens": 2048},
     }
     data = _post_with_retry(payload)
-    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    candidate = data["candidates"][0]
+    if candidate.get("finishReason") == "MAX_TOKENS":
+        print("[ai] WARNING: get_roast response was cut off by maxOutputTokens.")
+    return candidate["content"]["parts"][0]["text"].strip()
 
 
 def get_image_search_phrase(poem_text: str) -> str:
@@ -157,9 +165,9 @@ def get_image_search_phrase(poem_text: str) -> str:
         "Read this poem and output ONLY a short photo search phrase "
         "(3-6 words, no punctuation, no explanation) describing the kind "
         "of moody, soft, aesthetic photograph that would pair well with "
-        "it on a poetry page, can be a human, wheather, indoors, outdoors or atmosphere- think solitary figures, quiet interiors, "
-        "melancholic natural light, muted tones. Avoid party, "
-        "or overtly social/upbeat imagery, even if the poem "
+        "it on a poetry page - think solitary figures, quiet interiors, "
+        "melancholic natural light, muted tones. Avoid party, nightlife, "
+        "drinking, or overtly social/upbeat imagery, even if the poem "
         "mentions something adjacent - keep the mood reflective and "
         "solitary.\n\nPoem:\n" + poem_text
     )
