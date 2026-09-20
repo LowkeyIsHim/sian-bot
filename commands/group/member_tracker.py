@@ -7,6 +7,7 @@ once. Also gives each newly-seen member a baseline scoped menu.
 
 import json
 import os
+from datetime import datetime, timezone
 
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
@@ -35,11 +36,21 @@ def get_members(chat_id: int) -> dict:
     return data.get(str(chat_id), {})
 
 
+def get_member_info(chat_id: int, user_id: int) -> dict | None:
+    return get_members(chat_id).get(str(user_id))
+
+
 def record_member(chat_id: int, user_id: int, username: str | None, first_name: str | None) -> None:
     data = _load()
-    chat_key = str(chat_id)
+    chat_key, user_key = str(chat_id), str(user_id)
     data.setdefault(chat_key, {})
-    data[chat_key][str(user_id)] = {"username": username, "first_name": first_name}
+    existing = data[chat_key].get(user_key, {})
+    data[chat_key][user_key] = {
+        "username": username,
+        "first_name": first_name,
+        "first_seen": existing.get("first_seen") or datetime.now(timezone.utc).isoformat(),
+        "message_count": existing.get("message_count", 0) + 1,
+    }
     _save(data)
 
 
