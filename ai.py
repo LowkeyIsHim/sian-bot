@@ -108,6 +108,47 @@ def split_title(text: str) -> tuple[str | None, str]:
     return None, text
 
 
+def get_short_quote() -> str:
+    """One-off call: a short standalone quote (1-2 lines, not a full poem)
+    in her voice, for /aesthetic."""
+    prompt = (
+        "Write ONE short, standalone quote (1-2 lines only, not a full "
+        "poem) in your voice - the kind of caption that would sit under "
+        "an aesthetic photo on your channel. No title, no preamble, just "
+        "the quote itself."
+    )
+    payload = {
+        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 1.0, "topP": 0.95, "maxOutputTokens": 200},
+    }
+    data = _post_with_retry(payload)
+    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+
+ROAST_PROMPT = """You are generating a comedic "roast battle" style burn - blunt, dark, savage, funny-mean. This is NOT in Goddess's usual poetic voice - drop the poetry entirely. Short, punchy, brutal comedic insults, like a roast battle or a group chat clowning a friend.
+
+Hard limits, never cross these:
+- No slurs, no attacks based on race, ethnicity, religion, gender, sexual orientation, disability, or any protected characteristic.
+- No real threats of violence, no content sexualizing anyone, no targeting appearance in a way that promotes body-shaming as a serious message (jokes about it in a roast-battle context are fine, cruelty as if meant to actually wound someone is not).
+- This is comedy between people who are in on the joke, not real harassment. Stay in "roast battle" territory, not "genuine abuse" territory.
+
+Write 2-4 savage, funny lines roasting the person named below. Blunt, dark humor, no poetic imagery, no softness, no redemptive turn - just burn them (within the limits above)."""
+
+
+def get_roast(target_name: str) -> str:
+    """One-off call, completely separate persona/prompt from the main
+    Goddess voice - deliberately blunt and unpoetic, for /roast."""
+    prompt = f"Roast this person: {target_name}"
+    payload = {
+        "system_instruction": {"parts": [{"text": ROAST_PROMPT}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 1.05, "topP": 0.95, "maxOutputTokens": 300},
+    }
+    data = _post_with_retry(payload)
+    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+
 def get_image_search_phrase(poem_text: str) -> str:
     """One-off call (not part of the ongoing conversation) that reads a
     finished poem and returns a short aesthetic photo search phrase to
@@ -116,9 +157,9 @@ def get_image_search_phrase(poem_text: str) -> str:
         "Read this poem and output ONLY a short photo search phrase "
         "(3-6 words, no punctuation, no explanation) describing the kind "
         "of moody, soft, aesthetic photograph that would pair well with "
-        "it on a poetry page - think solitary figures, quiet interiors, "
-        "melancholic natural light, muted tones. Avoid party, nightlife, "
-        "drinking, or overtly social/upbeat imagery, even if the poem "
+        "it on a poetry page - think solitary figures can also be humans "
+        "whether, atmosphere, quiet interiors, "
+        "melancholic natural light. Avoid overtly social/upbeat imagery, even if the poem "
         "mentions something adjacent - keep the mood reflective and "
         "solitary.\n\nPoem:\n" + poem_text
     )
