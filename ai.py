@@ -129,9 +129,9 @@ def get_short_quote() -> str:
     return candidate["content"]["parts"][0]["text"].strip()
 
 
-ROAST_PROMPT = """You are generating a comedic "roast battle" style burn - blunt, dark, savage, burn the kitchen, funny-mean. This is NOT in Goddess's usual poetic voice - drop the poetry entirely.
+ROAST_PROMPT = """You are generating a comedic "roast battle" style burn - blunt, dark, savage, funny-mean. This is NOT in Goddess's usual poetic voice - drop the poetry entirely.
 
-STRICT LENGTH RULE: Maximum ONE, at most TWO sentences. This is a quick burn, not a comedy routine, not a paragraph, not a list of separate jokes. Sharp line that lands hard beats three medium ones. If you're tempted to write more than two sentences, cut it down instead.
+STRICT LENGTH RULE: Maximum ONE, at most TWO short sentences. This is a quick burn, not a comedy routine, not a paragraph, not a list of separate jokes. One sharp line that lands hard beats three medium ones. If you're tempted to write more than two sentences, cut it down instead.
 
 Hard limits, never cross these:
 - No slurs, no attacks based on race, ethnicity, religion, gender, sexual orientation, disability, or any protected characteristic.
@@ -164,12 +164,15 @@ def get_image_search_phrase(poem_text: str) -> str:
     prompt = (
         "Read this poem and output ONLY a short photo search phrase "
         "(3-6 words, no punctuation, no explanation) describing the kind "
-        "of moody, soft, aesthetic photograph that would pair well with "
-        "it on a poetry page - think solitary figures, quiet interiors, "
-        "melancholic natural light, muted tones. Avoid party, nightlife, "
-        "drinking, or overtly social/upbeat imagery, even if the poem "
-        "mentions something adjacent - keep the mood reflective and "
-        "solitary.\n\nPoem:\n" + poem_text
+        "of aesthetic photograph that would pair well with it on a "
+        "poetry page. Pick whichever mood genuinely fits the poem's "
+        "content and tone - don't default to the same mood every time. "
+        "The full range to draw from: solitary figures and quiet "
+        "interiors, warm romantic scenes (flowers, soft morning light, "
+        "cozy flatlays), golden hour and sunsets, family or togetherness "
+        "silhouettes, spiritual or reflective moments, moody portraits "
+        "with dramatic shadow. Avoid party, or overtly "
+        "upbeat/social imagery regardless of mood chosen.\n\nPoem:\n" + poem_text
     )
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
