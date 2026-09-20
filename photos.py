@@ -20,9 +20,9 @@ def _to_moody_aesthetic(image_bytes: bytes) -> io.BytesIO:
     actual range (warm sunsets, near-monochrome portraits, etc.) rather
     than forcing every photo into pure black-and-white."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    img = ImageEnhance.Color(img).enhance(0.45)       # mute saturation, keep some color
-    img = ImageEnhance.Contrast(img).enhance(1.12)    # slightly moodier contrast
-    img = ImageEnhance.Brightness(img).enhance(0.96)  # a touch darker/softer
+    img = ImageEnhance.Color(img).enhance(0.55)        # mute saturation, keep more warmth than before
+    img = ImageEnhance.Contrast(img).enhance(1.1)      # slightly moodier contrast
+    img = ImageEnhance.Brightness(img).enhance(0.97)   # a touch darker/softer
     output = io.BytesIO()
     img.save(output, format="JPEG", quality=90)
     output.seek(0)
