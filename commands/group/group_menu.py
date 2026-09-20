@@ -28,6 +28,10 @@ MOD_TEXT = (
     "_reply to someone's message to act on them_\n\n"
     "*/warn* */clearwarns* */warnings*\n"
     "_track and manage warnings_\n\n"
+    "*/purge*\n"
+    "_reply to a message, deletes from there to your command_\n\n"
+    "*/lockdown*\n"
+    "_toggle admins-only messaging - emergency switch_\n\n"
     "group admin access needed."
 )
 
@@ -37,6 +41,10 @@ FUN_TEXT = (
     "_reply to someone's message - blunt, dark, no mercy 💀_\n\n"
     "*/confess* `<text>`\n"
     "_DM me this one - posts anonymously here, no one will know it's you_\n\n"
+    "*/report*\n"
+    "_reply to a bad message, quietly flags it to admins_\n\n"
+    "*/userinfo*\n"
+    "_reply to someone to see their profile_\n\n"
     "open to everyone."
 )
 
