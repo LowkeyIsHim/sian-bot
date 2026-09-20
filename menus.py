@@ -20,11 +20,13 @@ PUBLIC_COMMANDS = [
     BotCommand("menu", "See what I can do"),
     BotCommand("whoami", "Get your Telegram ID"),
     BotCommand("developer", "Who built this bot"),
+    BotCommand("confess", "Anonymously confess to an enabled group"),
 ]
 
 PERSONAL_COMMANDS = [
     BotCommand("poem", "Ask for a poem"),
     BotCommand("story", "Ask for a short story"),
+    BotCommand("aesthetic", "A short quote + matching photo"),
     BotCommand("reset", "Clear our conversation"),
 ]
 
@@ -37,6 +39,10 @@ CREATOR_DM_COMMANDS = [
 GROUP_PUBLIC_COMMANDS = [
     BotCommand("gmenu", "Group tools overview"),
     BotCommand("listadmin", "List this group's admins"),
+    BotCommand("roast", "Roast someone (reply to their message)"),
+    BotCommand("tictactoe", "Challenge someone (reply to their message)"),
+    BotCommand("startwcg", "Start a word chain game"),
+    BotCommand("endwcg", "End the word chain game"),
 ]
 
 GROUP_ADMIN_COMMANDS = [
@@ -56,6 +62,7 @@ GROUP_ADMIN_COMMANDS = [
 CREATOR_GROUP_COMMANDS = [
     BotCommand("promote", "Promote a member (reply to their message)"),
     BotCommand("demote", "Demote a member (reply to their message)"),
+    BotCommand("setconfessions", "Enable/disable confessions for this group"),
 ]
 
 
