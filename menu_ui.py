@@ -29,6 +29,12 @@ STORIES_TEXT = (
     "for something specific."
 )
 
+AESTHETIC_TEXT = (
+    f"{header('aesthetic')}\n\n"
+    "send */aesthetic* for a short quote + a matching photo - "
+    "quicker than a full poem, same vibe."
+)
+
 DEV_TEXT = (
     f"{header('the person behind this')}\n\n"
     "built by *lowkey*\n\n"
@@ -41,9 +47,10 @@ def _main_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✒️ Poems", callback_data="m:poems"),
          InlineKeyboardButton("📖 Stories", callback_data="m:stories")],
-        [InlineKeyboardButton("🕊️ Reset chat", callback_data="m:reset"),
-         InlineKeyboardButton("🪶 Who am I", callback_data="m:whoami")],
-        [InlineKeyboardButton("🛠️ Developer", callback_data="m:dev")],
+        [InlineKeyboardButton("✨ Aesthetic", callback_data="m:aesthetic"),
+         InlineKeyboardButton("🕊️ Reset chat", callback_data="m:reset")],
+        [InlineKeyboardButton("🪶 Who am I", callback_data="m:whoami"),
+         InlineKeyboardButton("🛠️ Developer", callback_data="m:dev")],
     ])
 
 
@@ -69,6 +76,8 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await query.edit_message_text(POEMS_TEXT, parse_mode="Markdown", reply_markup=_back_keyboard())
     elif action == "m:stories":
         await query.edit_message_text(STORIES_TEXT, parse_mode="Markdown", reply_markup=_back_keyboard())
+    elif action == "m:aesthetic":
+        await query.edit_message_text(AESTHETIC_TEXT, parse_mode="Markdown", reply_markup=_back_keyboard())
     elif action == "m:dev":
         await query.edit_message_text(
             DEV_TEXT, parse_mode="Markdown", reply_markup=_back_keyboard(),
