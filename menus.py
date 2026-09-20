@@ -44,6 +44,8 @@ GROUP_PUBLIC_COMMANDS = [
     BotCommand("tictactoe", "Challenge someone (reply to their message)"),
     BotCommand("startwcg", "Start a word chain game"),
     BotCommand("endwcg", "End the word chain game"),
+    BotCommand("report", "Report a message to admins (reply to it)"),
+    BotCommand("userinfo", "See someone's profile (reply to their message)"),
 ]
 
 GROUP_ADMIN_COMMANDS = [
@@ -55,6 +57,8 @@ GROUP_ADMIN_COMMANDS = [
     BotCommand("warn", "Warn a member (reply to their message)"),
     BotCommand("clearwarns", "Clear a member's warnings"),
     BotCommand("warnings", "Check a member's warning count"),
+    BotCommand("purge", "Delete a range of messages (reply to the start)"),
+    BotCommand("lockdown", "Toggle admins-only messaging"),
     BotCommand("antiflood", "Configure flood protection"),
     BotCommand("antilink", "Configure link protection"),
     BotCommand("antiword", "Configure banned words"),
