@@ -38,7 +38,7 @@ async def userinfo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lines = [header("user info"), ""]
     lines.append(f"name: {target.first_name}" + (f" {target.last_name}" if target.last_name else ""))
     lines.append(f"username: @{target.username}" if target.username else "username: (none)")
-    lines.append(f"telegram id: `{target.id}`")
+    lines.append(f"telegram id: {target.id}")
     lines.append(f"is bot: {'yes' if target.is_bot else 'no'}")
     lines.append(f"chat status: {chat_status}")
     lines.append(f"creator (bot owner): {'yes' if access.is_creator(target.id) else 'no'}")
@@ -51,7 +51,7 @@ async def userinfo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         lines.append("first seen by me: not yet tracked")
 
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await update.message.reply_text("\n".join(lines))
 
 
 def register(app) -> None:
