@@ -31,6 +31,25 @@ MOD_TEXT = (
     "group admin access needed."
 )
 
+FUN_TEXT = (
+    f"{header('fun')}\n\n"
+    "*/roast*\n"
+    "_reply to someone's message - blunt, dark, no mercy 💀_\n\n"
+    "*/confess* `<text>`\n"
+    "_DM me this one - posts anonymously here, no one will know it's you_\n\n"
+    "open to everyone."
+)
+
+GAMES_TEXT = (
+    f"{header('games')}\n\n"
+    "*/tictactoe*\n"
+    "_reply to someone's message to challenge them_\n\n"
+    "*/startwcg* `[word]`\n"
+    "_word chain game - each word starts with the last letter of the one before_\n"
+    "*/endwcg* to stop\n\n"
+    "open to everyone."
+)
+
 PROTECT_TEXT = f"{header('auto-protection')}\n\nchoose a rule to configure."
 
 
@@ -38,6 +57,8 @@ def _main_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏷️ Tag All", callback_data="g:tagall"),
          InlineKeyboardButton("👑 Admins", callback_data="g:admins")],
+        [InlineKeyboardButton("🎭 Fun", callback_data="g:fun"),
+         InlineKeyboardButton("🎮 Games", callback_data="g:games")],
         [InlineKeyboardButton("🔨 Moderation", callback_data="g:mod")],
         [InlineKeyboardButton("🛡️ Auto-Protection", callback_data="g:protect")],
     ])
@@ -115,6 +136,14 @@ async def gmenu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if data == "g:mod":
         await query.edit_message_text(MOD_TEXT, parse_mode="Markdown", reply_markup=_back())
+        return
+
+    if data == "g:fun":
+        await query.edit_message_text(FUN_TEXT, parse_mode="Markdown", reply_markup=_back())
+        return
+
+    if data == "g:games":
+        await query.edit_message_text(GAMES_TEXT, parse_mode="Markdown", reply_markup=_back())
         return
 
     if data == "g:admins":
