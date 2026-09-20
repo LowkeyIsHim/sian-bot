@@ -28,6 +28,7 @@ import menu_ui
 from menus import PUBLIC_COMMANDS, refresh_private_menu
 from commands import (
     access_commands,
+    aesthetic,
     chat,
     developer,
     poem,
@@ -38,16 +39,19 @@ from commands import (
 )
 from commands.group import (
     admin_sync,
+    confess,
     flood_guard,
     group_menu,
     link_guard,
     member_tracker,
     moderation,
     promote_commands,
+    roast,
     settings as group_settings,
     tagall,
     word_guard,
 )
+from commands.group.games import tictactoe, word_chain
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -62,12 +66,17 @@ COMMAND_MODULES = [
     menu_ui,
     poem,
     story,
+    aesthetic,
     reset,
     whoami,
     developer,
     access_commands,
     promote_commands,
     admin_sync,
+    confess,
+    roast,
+    tictactoe,
+    word_chain,
     group_menu,
     tagall,
     moderation,
