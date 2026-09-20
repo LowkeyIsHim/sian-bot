@@ -120,7 +120,7 @@ def get_short_quote() -> str:
     payload = {
         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 1.0, "topP": 0.95, "maxOutputTokens": 200},
+        "generationConfig": {"temperature": 1.0, "topP": 0.95, "maxOutputTokens": 400},
     }
     data = _post_with_retry(payload)
     return data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -143,7 +143,7 @@ def get_roast(target_name: str) -> str:
     payload = {
         "system_instruction": {"parts": [{"text": ROAST_PROMPT}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 1.05, "topP": 0.95, "maxOutputTokens": 300},
+        "generationConfig": {"temperature": 1.05, "topP": 0.95, "maxOutputTokens": 800},
     }
     data = _post_with_retry(payload)
     return data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -157,9 +157,9 @@ def get_image_search_phrase(poem_text: str) -> str:
         "Read this poem and output ONLY a short photo search phrase "
         "(3-6 words, no punctuation, no explanation) describing the kind "
         "of moody, soft, aesthetic photograph that would pair well with "
-        "it on a poetry page - think solitary figures can also be humans "
-        "whether, atmosphere, quiet interiors, "
-        "melancholic natural light. Avoid overtly social/upbeat imagery, even if the poem "
+        "it on a poetry page, can be a human, wheather, indoors, outdoors or atmosphere- think solitary figures, quiet interiors, "
+        "melancholic natural light, muted tones. Avoid party, "
+        "or overtly social/upbeat imagery, even if the poem "
         "mentions something adjacent - keep the mood reflective and "
         "solitary.\n\nPoem:\n" + poem_text
     )
