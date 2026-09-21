@@ -1,14 +1,16 @@
 """
 New-member verification: when someone joins, they're muted and given a
-button to tap within a time limit. Tap in time -> unmuted, welcomed.
-Miss the window -> kicked (can rejoin and try again). Kills most
-scam/spam accounts before they can ever post.
+button to tap within a time limit. The button is sent by DM when
+possible (so it's private to them, not visible to the whole group) -
+falls back to posting it in-group if the bot can't DM them yet (Telegram
+only allows that once they've messaged the bot at least once).
 
-Also houses /rules and /setrules, since they're naturally shown together
-in the welcome flow.
+Miss the window -> kicked (can rejoin and try again). Also houses /rules
+and /setrules, since they're naturally shown together in the welcome flow.
 """
 
 import asyncio
+import html
 import json
 import os
 
@@ -47,6 +49,10 @@ def _load_rules() -> dict:
 def _save_rules(data: dict) -> None:
     with open(RULES_FILE, "w") as f:
         json.dump(data, f, indent=2)
+
+
+def _mention(user_id: int, name: str) -> str:
+    return f'<a href="tg://user?id={user_id}">{html.escape(name)}</a>'
 
 
 async def setrules(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -118,18 +124,43 @@ async def _on_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     ]])
 
     rules_note = "\nuse /rules to see this group's rules." if str(chat_id) in _load_rules() else ""
+    minutes = VERIFY_WINDOW_SECONDS // 60
+    group_mention = _mention(user_id, user.first_name)
 
-    sent = await context.bot.send_message(
-        chat_id,
-        f"welcome, {user.first_name}. tap below within "
-        f"{VERIFY_WINDOW_SECONDS // 60} minutes to verify you're human - "
-        f"you're muted until then.{rules_note}",
-        reply_markup=keyboard,
+    # Try DM first - private to them, not visible to the whole group.
+    try:
+        sent = await context.bot.send_message(
+            user_id,
+            f"you just joined {chat.title} and need to verify you're human "
+            f"within {minutes} minutes - you're muted there until then.{rules_note}",
+            reply_markup=keyboard,
+        )
+        prompt_chat_id = user_id
+        await context.bot.send_message(
+            chat_id,
+            f"{group_mention} joined - check your DMs with me to verify.",
+            parse_mode="HTML",
+        )
+    except TelegramError:
+        # Can't DM them yet (they've never messaged the bot) - fall back
+        # to posting the button in-group so they aren't stuck unable to verify.
+        sent = await context.bot.send_message(
+            chat_id,
+            f"welcome, {group_mention}. tap below within {minutes} minutes "
+            f"to verify you're human - you're muted until then.{rules_note}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        prompt_chat_id = chat_id
+
+    asyncio.create_task(
+        _expire_verification(context.bot, chat_id, user_id, token, prompt_chat_id, sent.message_id)
     )
-    asyncio.create_task(_expire_verification(context.bot, chat_id, user_id, token, sent.message_id))
 
 
-async def _expire_verification(bot, chat_id: int, user_id: int, token: int, message_id: int) -> None:
+async def _expire_verification(
+    bot, chat_id: int, user_id: int, token: int, prompt_chat_id: int, message_id: int
+) -> None:
     await asyncio.sleep(VERIFY_WINDOW_SECONDS)
     if _pending.get((chat_id, user_id)) != token:
         return  # already verified, or superseded by a newer join
@@ -142,7 +173,7 @@ async def _expire_verification(bot, chat_id: int, user_id: int, token: int, mess
         pass
     try:
         await bot.edit_message_text(
-            chat_id=chat_id, message_id=message_id,
+            chat_id=prompt_chat_id, message_id=message_id,
             text="⏰ didn't verify in time - removed. you're welcome to rejoin and try again.",
         )
     except TelegramError:
