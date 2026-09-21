@@ -53,6 +53,7 @@ from commands.group import (
     settings as group_settings,
     tagall,
     userinfo,
+    verification,
     word_guard,
 )
 from commands.group.games import tictactoe, word_chain
@@ -88,6 +89,7 @@ COMMAND_MODULES = [
     lockdown,
     report,
     userinfo,
+    verification,
     group_settings,
     flood_guard,
     link_guard,
