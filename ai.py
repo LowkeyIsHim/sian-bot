@@ -1,201 +1,140 @@
 """
-Wrapper around the Google Gemini API, using the Sian personality prompt.
+Wires together the command modules, the freeform chat handler, and the
+Telegram command menu (the ☰ button next to the message box).
 
-Gemini's free tier has no credit card requirement and doesn't expire like a
-one-time credit balance - it just resets daily. Good fit for a personal bot.
+Menus are now permission-scoped (see menus.py) rather than one flat list -
+someone only sees the commands they can actually use.
+
+To add a new feature: create a new file in commands/ (or commands/group/
+for group-only features) with an async handler and a register(app)
+function, add it to COMMAND_MODULES below, and add its BotCommand entry
+to the relevant list in menus.py.
+
+IMPORTANT: any passive MessageHandler registered with the SAME filter
+(e.g. filters.ChatType.GROUPS) must use a DIFFERENT PTB handler group
+number in its own register(app) call - PTB only runs one handler per
+group per update, so identical filters in the same group silently mask
+each other. member_tracker/flood_guard/link_guard/word_guard each use
+their own group number (1-4) for exactly this reason.
 """
 
+import logging
 import os
-import time
-import requests
 
-from personality import SYSTEM_PROMPT
+from telegram.ext import Application
 
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-MODEL = "gemini-3.5-flash"
-API_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{MODEL}:generateContent?key={GEMINI_API_KEY}"
+import access
+import menu_ui
+from menus import PUBLIC_COMMANDS, refresh_private_menu
+from commands import (
+    access_commands,
+    aesthetic,
+    chat,
+    developer,
+    poem,
+    reset,
+    start,
+    story,
+    whoami,
+)
+from commands.group import (
+    admin_sync,
+    confess,
+    flood_guard,
+    group_menu,
+    link_guard,
+    lockdown,
+    member_tracker,
+    moderation,
+    promote_commands,
+    purge,
+    report,
+    roast,
+    settings as group_settings,
+    tagall,
+    userinfo,
+    verification,
+    word_guard,
+)
+from commands.group.games import tictactoe, word_chain
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+# Every command module registered here gets wired up automatically.
+# Order matters only in that "chat" (the freeform catch-all) should stay last.
+COMMAND_MODULES = [
+    start,
+    menu_ui,
+    poem,
+    story,
+    aesthetic,
+    reset,
+    whoami,
+    developer,
+    access_commands,
+    promote_commands,
+    admin_sync,
+    confess,
+    roast,
+    tictactoe,
+    word_chain,
+    group_menu,
+    tagall,
+    moderation,
+    purge,
+    lockdown,
+    report,
+    userinfo,
+    verification,
+    group_settings,
+    flood_guard,
+    link_guard,
+    word_guard,
+    member_tracker,
+    chat,
+]
+
+BOT_SHORT_DESCRIPTION = "Poems, stories, and conversation - written the way Goddess would write them."
+BOT_DESCRIPTION = (
+    "I'm Goddess. I write poems and short stories the way I actually would - "
+    "raw, imagery-heavy, and always finding a thread of resilience. "
+    "Talk to me, or use /help to see what I can do."
 )
 
 
-class RateLimitError(Exception):
-    """Raised when Gemini returns a 429 (too many requests) after retries
-    are exhausted - lets command handlers show a friendlier message."""
-    pass
-
-
-def _post_with_retry(payload: dict, retries: int = 2, backoff: float = 3.0) -> dict:
-    """POSTs to the Gemini API, retrying briefly on 429s (rate limits
-    are usually per-minute and clear up fast) before giving up."""
-    for attempt in range(retries + 1):
-        resp = requests.post(API_URL, json=payload, timeout=60)
-        if resp.status_code == 429:
-            if attempt < retries:
-                time.sleep(backoff * (attempt + 1))
-                continue
-            raise RateLimitError("Gemini rate limit hit after retries")
-        resp.raise_for_status()
-        return resp.json()
-
-# Keeps a short rolling conversation per chat_id so replies stay in context.
-_conversations: dict[int, list[dict]] = {}
-MAX_HISTORY = 15  # messages kept per chat (user+assistant combined)
-
-
-def _get_history(chat_id: int) -> list[dict]:
-    return _conversations.setdefault(chat_id, [])
-
-
-def ask_sian(chat_id: int, user_message: str) -> str:
-    history = _get_history(chat_id)
-    history.append({"role": "user", "text": user_message})
-
-    if len(history) > MAX_HISTORY:
-        del history[: len(history) - MAX_HISTORY]
-
-    # Gemini's roles are "user" and "model" (not "assistant")
-    contents = [
-        {
-            "role": "user" if turn["role"] == "user" else "model",
-            "parts": [{"text": turn["text"]}],
-        }
-        for turn in history
-    ]
-
-    payload = {
-        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        "contents": contents,
-        "generationConfig": {
-            # Sweet spot for creative/poetic writing: high enough for voice
-            # and imagery to feel alive, not so high it goes incoherent.
-            "temperature": 1.0,
-            "topP": 0.95,
-            # Generous budget - on 3.5-tier models, internal "thinking"
-            # tokens are drawn from this same pool before the visible reply
-            # is written, so a low limit here can truncate the actual poem.
-            "maxOutputTokens": 2048,
-        },
-    }
-
-    data = _post_with_retry(payload)
-
-    candidate = data["candidates"][0]
-    if candidate.get("finishReason") == "MAX_TOKENS":
-        print("[ai] WARNING: response was cut off by maxOutputTokens.")
-
-    reply_text = candidate["content"]["parts"][0]["text"]
-
-    history.append({"role": "model", "text": reply_text})
-    return reply_text
-
-
-def reset_history(chat_id: int) -> None:
-    _conversations.pop(chat_id, None)
-
-
-TITLE_PREFIX = "TITLE:"
-
-
-def split_title(text: str) -> tuple[str | None, str]:
-    """If the reply starts with a 'TITLE: ...' line, splits it off and
-    returns (title, remaining_body). Otherwise returns (None, text)."""
-    if text.startswith(TITLE_PREFIX):
-        first_line, _, rest = text.partition("\n")
-        title = first_line[len(TITLE_PREFIX):].strip()
-        body = rest.lstrip("\n")
-        return title, body
-    return None, text
-
-
-def get_short_quote() -> str:
-    """One-off call: a short standalone quote (1-2 lines, not a full poem)
-    in her voice, for /aesthetic."""
-    prompt = (
-        "Write ONE short, standalone quote (1-2 lines only, not a full "
-        "poem) in your voice - the kind of caption that would sit under "
-        "an aesthetic photo on your channel. Write something fresh and "
-        "original - do NOT reuse or closely paraphrase your usual go-to "
-        "images (the leaking roof, sand, carrying the weight of a house, "
-        "stones). Pick a different angle each time from your range: "
-        "home, your mother, wariness around love, growing up too fast, "
-        "confronting someone who hurt you, or quiet resilience. No "
-        "title, no preamble, just the quote itself."
-    )
-    payload = {
-        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 1.15, "topP": 0.97, "maxOutputTokens": 2048},
-    }
-    data = _post_with_retry(payload)
-    candidate = data["candidates"][0]
-    if candidate.get("finishReason") == "MAX_TOKENS":
-        print("[ai] WARNING: get_short_quote response was cut off by maxOutputTokens.")
-    return candidate["content"]["parts"][0]["text"].strip()
-
-
-ROAST_PROMPT = """You are generating a comedic "roast battle" style burn - blunt, dark, savage, funny-mean. This is NOT in Goddess's usual poetic voice - drop the poetry entirely.
-
-STRICT LENGTH RULE: Maximum ONE, at most TWO short sentences. This is a quick burn, not a comedy routine, not a paragraph, not a list of separate jokes. One sharp line that lands hard beats three medium ones. If you're tempted to write more than two sentences, cut it down instead.
-
-Hard limits, never cross these:
-- No slurs, no attacks based on race, ethnicity, religion, gender, sexual orientation, disability, or any protected characteristic.
-- No real threats of violence, no content sexualizing anyone, no targeting appearance in a way that promotes body-shaming as a serious message (jokes about it in a roast-battle context are fine, cruelty as if meant to actually wound someone is not).
-- This is comedy between people who are in on the joke, not real harassment. Stay in "roast battle" territory, not "genuine abuse" territory.
-
-Write ONE savage, funny burn (1-2 sentences max) roasting the person named below. Blunt, dark humor, no poetic imagery, no softness, no redemptive turn, no preamble, no "here's a roast for you" - just the burn itself and nothing else."""
-
-
-def get_roast(target_name: str) -> str:
-    """One-off call, completely separate persona/prompt from the main
-    Goddess voice - deliberately blunt and unpoetic, for /roast."""
-    prompt = f"Roast this person: {target_name}"
-    payload = {
-        "system_instruction": {"parts": [{"text": ROAST_PROMPT}]},
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 1.05, "topP": 0.95, "maxOutputTokens": 2048},
-    }
-    data = _post_with_retry(payload)
-    candidate = data["candidates"][0]
-    if candidate.get("finishReason") == "MAX_TOKENS":
-        print("[ai] WARNING: get_roast response was cut off by maxOutputTokens.")
-    return candidate["content"]["parts"][0]["text"].strip()
-
-
-def get_image_search_phrase(poem_text: str) -> str:
-    """One-off call (not part of the ongoing conversation) that reads a
-    finished poem and returns a short aesthetic photo search phrase to
-    pair with it - e.g. 'golden hour soft flowers morning'."""
-    prompt = (
-        "Read this poem and output ONLY a short photo search phrase "
-        "(3-6 words, no punctuation, no explanation) describing the kind "
-        "of aesthetic photograph that would pair well with it on a "
-        "poetry page.\n\n"
-        "IMPORTANT: interpret the EMOTIONAL MOOD, don't just pull literal "
-        "objects mentioned in the text. If the poem mentions a roof, "
-        "rain, or a window, that does NOT mean the photo should show "
-        "a roof, rain, or a window - translate the feeling into a "
-        "completely different visual instead.\n\n"
-        "Force yourself to rotate across this full range rather than "
-        "defaulting to indoor/window/rain imagery: solitary figures "
-        "outdoors, warm romantic scenes (flowers, soft morning light, "
-        "cozy flatlays), golden hour and sunsets, family or togetherness "
-        "silhouettes, spiritual or reflective moments, moody portraits "
-        "with dramatic shadow, quiet nature scenes. Avoid party, "
-        "or overtly upbeat/social imagery regardless of mood "
-        "chosen.\n\nPoem:\n" + poem_text
-    )
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 1.1, "topP": 0.97, "maxOutputTokens": 300},
-    }
+async def _post_init(app: Application) -> None:
+    """Runs once after the bot connects - sets the safe default menu,
+    the profile text, and pre-seeds creators' private menus so they see
+    everything immediately without needing to send /start first."""
+    await app.bot.set_my_commands(PUBLIC_COMMANDS)  # default/fallback scope
     try:
-        resp = requests.post(API_URL, json=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        candidate = data["candidates"][0]
-        if candidate.get("finishReason") == "MAX_TOKENS":
-            print("[ai] WARNING: get_image_search_phrase response was cut off.")
-        return candidate["content"]["parts"][0]["text"].strip()
+        await app.bot.set_my_short_description(BOT_SHORT_DESCRIPTION)
+        await app.bot.set_my_description(BOT_DESCRIPTION)
     except Exception:
-        return "moody aesthetic soft light"
+        logger.exception("Could not set bot profile description (non-fatal)")
+
+    for creator_id in access.CREATOR_IDS:
+        await refresh_private_menu(app.bot, creator_id)
+
+
+async def _error_handler(update, context) -> None:
+    """Catches anything a specific handler didn't - so a weird/malformed
+    update from someone trying to break the bot gets logged clearly
+    instead of failing silently somewhere."""
+    logger.error("Unhandled exception while processing an update", exc_info=context.error)
+
+
+def build_app() -> Application:
+    token = os.environ["TELEGRAM_BOT_TOKEN"]
+    app = Application.builder().token(token).post_init(_post_init).build()
+
+    for module in COMMAND_MODULES:
+        module.register(app)
+
+    app.add_error_handler(_error_handler)
+
+    return app
