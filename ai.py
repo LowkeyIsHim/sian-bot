@@ -114,13 +114,18 @@ def get_short_quote() -> str:
     prompt = (
         "Write ONE short, standalone quote (1-2 lines only, not a full "
         "poem) in your voice - the kind of caption that would sit under "
-        "an aesthetic photo on your channel. No title, no preamble, just "
-        "the quote itself."
+        "an aesthetic photo on your channel. Write something fresh and "
+        "original - do NOT reuse or closely paraphrase your usual go-to "
+        "images (the leaking roof, sand, carrying the weight of a house, "
+        "stones). Pick a different angle each time from your range: "
+        "home, your mother, wariness around love, growing up too fast, "
+        "confronting someone who hurt you, or quiet resilience. No "
+        "title, no preamble, just the quote itself."
     )
     payload = {
         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 1.0, "topP": 0.95, "maxOutputTokens": 2048},
+        "generationConfig": {"temperature": 1.15, "topP": 0.97, "maxOutputTokens": 2048},
     }
     data = _post_with_retry(payload)
     candidate = data["candidates"][0]
@@ -160,27 +165,37 @@ def get_roast(target_name: str) -> str:
 def get_image_search_phrase(poem_text: str) -> str:
     """One-off call (not part of the ongoing conversation) that reads a
     finished poem and returns a short aesthetic photo search phrase to
-    pair with it - e.g. 'moody rain window aesthetic'."""
+    pair with it - e.g. 'golden hour soft flowers morning'."""
     prompt = (
         "Read this poem and output ONLY a short photo search phrase "
         "(3-6 words, no punctuation, no explanation) describing the kind "
         "of aesthetic photograph that would pair well with it on a "
-        "poetry page. Pick whichever mood genuinely fits the poem's "
-        "content and tone - don't default to the same mood every time. "
-        "The full range to draw from: solitary figures and quiet "
-        "interiors, warm romantic scenes (flowers, soft morning light, "
+        "poetry page.\n\n"
+        "IMPORTANT: interpret the EMOTIONAL MOOD, don't just pull literal "
+        "objects mentioned in the text. If the poem mentions a roof, "
+        "rain, or a window, that does NOT mean the photo should show "
+        "a roof, rain, or a window - translate the feeling into a "
+        "completely different visual instead.\n\n"
+        "Force yourself to rotate across this full range rather than "
+        "defaulting to indoor/window/rain imagery: solitary figures "
+        "outdoors, warm romantic scenes (flowers, soft morning light, "
         "cozy flatlays), golden hour and sunsets, family or togetherness "
         "silhouettes, spiritual or reflective moments, moody portraits "
-        "with dramatic shadow. Avoid party, or overtly "
-        "upbeat/social imagery regardless of mood chosen.\n\nPoem:\n" + poem_text
+        "with dramatic shadow, quiet nature scenes. Avoid party, "
+        "or overtly upbeat/social imagery regardless of mood "
+        "chosen.\n\nPoem:\n" + poem_text
     )
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 30},
+        "generationConfig": {"temperature": 1.1, "topP": 0.97, "maxOutputTokens": 300},
     }
     try:
         resp = requests.post(API_URL, json=payload, timeout=30)
         resp.raise_for_status()
-        return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        data = resp.json()
+        candidate = data["candidates"][0]
+        if candidate.get("finishReason") == "MAX_TOKENS":
+            print("[ai] WARNING: get_image_search_phrase response was cut off.")
+        return candidate["content"]["parts"][0]["text"].strip()
     except Exception:
         return "moody aesthetic soft light"
