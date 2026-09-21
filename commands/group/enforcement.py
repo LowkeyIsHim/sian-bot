@@ -4,6 +4,7 @@ Given a violation, always deletes the offending message, then applies
 whatever escalation the group's settings call for.
 """
 
+import html
 import json
 import logging
 import os
@@ -69,6 +70,18 @@ async def is_exempt(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: i
         return False
 
 
+async def mention_html(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> str:
+    """A clickable @mention that's safe regardless of what characters are
+    in the person's name - HTML escaping handles it, unlike legacy
+    Markdown where a stray underscore silently breaks the whole message."""
+    try:
+        member = await context.bot.get_chat_member(chat_id, user_id)
+        name = html.escape(member.user.first_name or "user")
+    except TelegramError:
+        name = f"user {user_id}"
+    return f'<a href="tg://user?id={user_id}">{name}</a>'
+
+
 async def enforce(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
@@ -85,14 +98,15 @@ async def enforce(
         logger.warning(f"Could not delete message in {chat_id}: {e}")
 
     action = rule.get("action", "delete")
-
     if action == "delete":
         return
+
+    mention = await mention_html(context, chat_id, user_id)
 
     if action == "ban":
         try:
             await context.bot.ban_chat_member(chat_id, user_id)
-            await context.bot.send_message(chat_id, f"Removed a member for: {reason}.")
+            await context.bot.send_message(chat_id, f"{mention} was removed for {reason}.", parse_mode="HTML")
         except TelegramError as e:
             logger.warning(f"Could not ban {user_id} in {chat_id}: {e}")
         return
@@ -107,7 +121,7 @@ async def enforce(
                 until_date=until,
             )
             await context.bot.send_message(
-                chat_id, f"Muted a member for {minutes} minute(s) - {reason}."
+                chat_id, f"{mention} was muted for {minutes} minute(s) - {reason}.", parse_mode="HTML"
             )
         except TelegramError as e:
             logger.warning(f"Could not mute {user_id} in {chat_id}: {e}")
@@ -120,7 +134,9 @@ async def enforce(
             try:
                 await context.bot.ban_chat_member(chat_id, user_id)
                 await context.bot.send_message(
-                    chat_id, f"Member reached {count}/{limit} warnings ({reason}) and was removed."
+                    chat_id,
+                    f"{mention} reached {count}/{limit} warnings ({reason}) and was removed.",
+                    parse_mode="HTML",
                 )
             except TelegramError as e:
                 logger.warning(f"Could not ban {user_id} in {chat_id} after warn limit: {e}")
@@ -128,7 +144,7 @@ async def enforce(
         else:
             try:
                 await context.bot.send_message(
-                    chat_id, f"Warning {count}/{limit} - {reason}."
+                    chat_id, f"{mention} received a warning ({count}/{limit}) - {reason}.", parse_mode="HTML"
                 )
             except TelegramError:
                 pass
