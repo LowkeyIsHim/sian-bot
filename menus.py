@@ -47,6 +47,7 @@ GROUP_PUBLIC_COMMANDS = [
     BotCommand("endwcg", "End the word chain game"),
     BotCommand("report", "Report a message to admins (reply to it)"),
     BotCommand("userinfo", "See someone's profile (reply to their message)"),
+    BotCommand("rules", "See this group's rules"),
 ]
 
 GROUP_ADMIN_COMMANDS = [
@@ -60,6 +61,7 @@ GROUP_ADMIN_COMMANDS = [
     BotCommand("warnings", "Check a member's warning count"),
     BotCommand("purge", "Delete a range of messages (reply to the start)"),
     BotCommand("lockdown", "Toggle admins-only messaging"),
+    BotCommand("setrules", "Set this group's rules"),
     BotCommand("antiflood", "Configure flood protection"),
     BotCommand("antilink", "Configure link protection"),
     BotCommand("antiword", "Configure banned words"),
