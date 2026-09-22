@@ -48,6 +48,7 @@ GROUP_PUBLIC_COMMANDS = [
     BotCommand("report", "Report a message to admins (reply to it)"),
     BotCommand("userinfo", "See someone's profile (reply to their message)"),
     BotCommand("rules", "See this group's rules"),
+    BotCommand("leaderboard", "See who's winning the games"),
 ]
 
 GROUP_ADMIN_COMMANDS = [
