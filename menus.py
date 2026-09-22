@@ -43,6 +43,8 @@ GROUP_PUBLIC_COMMANDS = [
     BotCommand("listadmin", "List this group's admins"),
     BotCommand("roast", "Roast someone (reply to their message)"),
     BotCommand("tictactoe", "Challenge someone (reply to their message)"),
+    BotCommand("rps", "Rock-paper-scissors (reply to their message)"),
+    BotCommand("trivia", "Start a trivia round"),
     BotCommand("startwcg", "Start a word chain game"),
     BotCommand("endwcg", "End the word chain game"),
     BotCommand("report", "Report a message to admins (reply to it)"),
