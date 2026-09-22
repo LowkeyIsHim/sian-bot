@@ -5,6 +5,7 @@ Gemini's free tier has no credit card requirement and doesn't expire like a
 one-time credit balance - it just resets daily. Good fit for a personal bot.
 """
 
+import json
 import os
 import time
 import requests
@@ -162,6 +163,31 @@ def get_roast(target_name: str) -> str:
     return candidate["content"]["parts"][0]["text"].strip()
 
 
+def get_trivia_question() -> dict:
+    """One-off call: returns {'question': str, 'options': [4 str],
+    'correct_index': int} for /trivia."""
+    prompt = (
+        "Generate one interesting, fun multiple-choice trivia question - "
+        "general knowledge, vary the category each time (science, history, "
+        "pop culture, geography, sports, etc). Respond with ONLY valid "
+        "JSON, no markdown code fences, no explanation, in exactly this "
+        'format: {"question": "...", "options": ["...", "...", "...", '
+        '"..."], "correct_index": 0}\n'
+        "correct_index is the 0-based index of the right answer in "
+        "options. Exactly 4 options, only one correct."
+    )
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.9, "topP": 0.95, "maxOutputTokens": 2048},
+    }
+    data = _post_with_retry(payload)
+    text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end != -1:
+        text = text[start : end + 1]
+    return json.loads(text)
+
+
 def get_image_search_phrase(poem_text: str) -> str:
     """One-off call (not part of the ongoing conversation) that reads a
     finished poem and returns a short aesthetic photo search phrase to
@@ -182,7 +208,7 @@ def get_image_search_phrase(poem_text: str) -> str:
         "cozy flatlays), golden hour and sunsets, family or togetherness "
         "silhouettes, spiritual or reflective moments, moody portraits "
         "with dramatic shadow, quiet nature scenes. Avoid party, "
-        "nightlife, or overtly upbeat/social imagery regardless of mood "
+        "or overtly upbeat/social imagery regardless of mood "
         "chosen.\n\nPoem:\n" + poem_text
     )
     payload = {
