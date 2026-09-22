@@ -58,7 +58,7 @@ from commands.group import (
     verification,
     word_guard,
 )
-from commands.group.games import tictactoe, word_chain
+from commands.group.games import rps, tictactoe, trivia, word_chain
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -84,6 +84,8 @@ COMMAND_MODULES = [
     roast,
     tictactoe,
     word_chain,
+    rps,
+    trivia,
     group_menu,
     tagall,
     moderation,
