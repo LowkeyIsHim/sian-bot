@@ -55,6 +55,8 @@ GAMES_TEXT = (
     "*/startwcg* `[word]`\n"
     "_word chain game - each word starts with the last letter of the one before_\n"
     "*/endwcg* to stop\n\n"
+    "*/leaderboard*\n"
+    "_see who's winning_\n\n"
     "open to everyone."
 )
 
