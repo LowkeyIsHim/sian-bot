@@ -76,12 +76,15 @@ async def list_access_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     creator_lines = [await _describe_user(context, uid) for uid in data["creators"]]
     granted_lines = [await _describe_user(context, uid) for uid in data["granted"]] or ["_none_"]
+    group_admin_lines = [await _describe_user(context, uid) for uid in data["group_admins"]] or ["_none_"]
 
     text = (
         f"{header('access list')}\n\n"
         "*creators*\n" + "\n".join(f"• {line}" for line in creator_lines) + "\n\n"
         f"{DOT_DIVIDER}\n\n"
-        "*granted*\n" + "\n".join(f"• {line}" for line in granted_lines)
+        "*granted (personal/DM)*\n" + "\n".join(f"• {line}" for line in granted_lines) + "\n\n"
+        f"{DOT_DIVIDER}\n\n"
+        "*group admins (bot tier)*\n" + "\n".join(f"• {line}" for line in group_admin_lines)
     )
     await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
 
