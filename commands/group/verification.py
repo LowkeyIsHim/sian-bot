@@ -12,6 +12,7 @@ and /setrules, since they're naturally shown together in the welcome flow.
 import asyncio
 import html
 import json
+import logging
 import os
 
 from telegram import (
@@ -26,6 +27,8 @@ from telegram.ext import CallbackQueryHandler, ChatMemberHandler, CommandHandler
 
 import access
 from branding import header
+
+logger = logging.getLogger(__name__)
 
 VERIFY_WINDOW_SECONDS = 300  # 5 minutes
 
@@ -96,6 +99,11 @@ async def _on_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     old_status = result.old_chat_member.status
     new_status = result.new_chat_member.status
     user = result.new_chat_member.user
+
+    logger.info(
+        f"chat_member update in {chat.id}: user={user.id} ({user.first_name}) "
+        f"{old_status} -> {new_status}, is_bot={user.is_bot}"
+    )
 
     if user.is_bot:
         return
