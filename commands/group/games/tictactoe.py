@@ -7,6 +7,9 @@ lost on restart, which is an acceptable tradeoff for a quick group game.
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
+from branding import DOT_DIVIDER
+from commands.group.leaderboard import record_win
+
 EMPTY, X, O = " ", "❌", "⭕"
 
 _games: dict[int, dict] = {}  # message_id -> game state
@@ -42,7 +45,8 @@ def _check_winner(board: list[str]):
 def _status_text(game: dict, whose_turn_id: int) -> str:
     p1_id, p2_id = game["order"]
     return (
-        f"{X} {game['names'][p1_id]} vs {O} {game['names'][p2_id]}\n"
+        f"🎮 *tic-tac-toe*\n{DOT_DIVIDER}\n\n"
+        f"{X} {game['names'][p1_id]}  vs  {O} {game['names'][p2_id]}\n"
         f"{game['names'][whose_turn_id]}'s turn ({game['players'][whose_turn_id]})"
     )
 
@@ -71,7 +75,7 @@ async def tictactoe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "turn": challenger.id,
     }
 
-    sent = await update.message.reply_text(_status_text(game, challenger.id))
+    sent = await update.message.reply_text(_status_text(game, challenger.id), parse_mode="Markdown")
     _games[sent.message_id] = game
     await sent.edit_reply_markup(reply_markup=_render_board(board, sent.message_id))
 
@@ -103,17 +107,21 @@ async def tictactoe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     winner = _check_winner(game["board"])
     if winner == "draw":
         del _games[game_id]
-        await query.edit_message_text("It's a draw!")
+        await query.edit_message_text(f"🎮 *tic-tac-toe*\n{DOT_DIVIDER}\n\n🤝 it's a draw!", parse_mode="Markdown")
         return
     if winner:
         del _games[game_id]
-        await query.edit_message_text(f"{game['names'][user_id]} wins! ({winner})")
+        record_win(query.message.chat_id, user_id, game["names"][user_id], "tictactoe")
+        await query.edit_message_text(
+            f"🎮 *tic-tac-toe*\n{DOT_DIVIDER}\n\n🏆 {game['names'][user_id]} wins! ({winner})",
+            parse_mode="Markdown",
+        )
         return
 
     other_id = next(pid for pid in game["players"] if pid != user_id)
     game["turn"] = other_id
     await query.edit_message_text(
-        _status_text(game, other_id), reply_markup=_render_board(game["board"], game_id)
+        _status_text(game, other_id), parse_mode="Markdown", reply_markup=_render_board(game["board"], game_id)
     )
 
 
