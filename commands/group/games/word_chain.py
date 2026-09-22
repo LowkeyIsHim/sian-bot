@@ -2,7 +2,8 @@
 /startwcg - elimination word game:
   1. 30s join phase - type "join" to enter (need 2+ players or it cancels).
   2. Each turn, the current player gets a random letter + minimum word
-     length. Answer correctly and in time, or you're eliminated.
+     length. Wrong guesses can be retried as many times as you want -
+     only running out of TIME eliminates you, not a single wrong word.
   3. Every full round: minimum length goes up, time limit goes down.
   4. Last player standing wins. /endwcg force-ends it (admins/creators).
 
@@ -18,13 +19,15 @@ from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 
 import access
+from branding import header, DOT_DIVIDER
+from commands.group.leaderboard import record_win
 
 JOIN_PHASE_SECONDS = 30
 STARTING_MIN_LENGTH = 4
 STARTING_TURN_SECONDS = 20
 MIN_TURN_SECONDS = 5
 LENGTH_INCREASE_PER_ROUND = 1
-TIME_DECREASE_PER_ROUND = 3
+TIME_DECREASE_PER_ROUND = 2
 
 _games: dict[int, dict] = {}  # chat_id -> game state
 
@@ -45,7 +48,8 @@ async def startwcg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     _games[chat_id] = {"phase": "joining", "joined": [], "names": {}}
     await update.message.reply_text(
-        f"🔤 word chain game starting - type *join* in the next {JOIN_PHASE_SECONDS}s to play!\n"
+        f"{header('word chain')}\n\n"
+        f"type *join* in the next {JOIN_PHASE_SECONDS}s to play!\n"
         f"need at least 2 players.",
         parse_mode="Markdown",
     )
@@ -88,7 +92,9 @@ async def _end_join_phase(bot, chat_id: int) -> None:
     })
 
     roster = ", ".join(_mention(uid, game["names"][uid]) for uid in game["active"])
-    await bot.send_message(chat_id, f"players: {roster}\nlet's begin!", parse_mode="Markdown")
+    await bot.send_message(
+        chat_id, f"{DOT_DIVIDER}\nplayers: {roster}\nlet's begin!", parse_mode="Markdown"
+    )
     await _announce_turn(bot, chat_id, game)
 
 
@@ -131,8 +137,10 @@ async def _eliminate_current(bot, chat_id: int, game: dict) -> None:
     if len(game["active"]) <= 1:
         if game["active"]:
             winner_uid = game["active"][0]
+            record_win(chat_id, winner_uid, game["names"][winner_uid], "wcg")
             await bot.send_message(
                 chat_id,
+                f"{header('winner')}\n\n"
                 f"🏆 {_mention(winner_uid, game['names'][winner_uid])} wins the word chain game!",
                 parse_mode="Markdown",
             )
@@ -189,15 +197,14 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not word.isalpha():
         return  # not a plausible attempt, ignore
 
-    valid = (
-        word[0] == game["current_letter"]
-        and len(word) >= game["current_min_length"]
-        and word not in game["used_words"]
-    )
-
-    if not valid:
-        await message.reply_text("❌ wrong - eliminated!")
-        await _eliminate_current(context.bot, chat.id, game)
+    if word[0] != game["current_letter"]:
+        await message.reply_text(f"❌ needs to start with *{game['current_letter'].upper()}* - try again!", parse_mode="Markdown")
+        return
+    if len(word) < game["current_min_length"]:
+        await message.reply_text(f"❌ needs to be at least {game['current_min_length']} letters - try again!")
+        return
+    if word in game["used_words"]:
+        await message.reply_text('❌ already used - try again!')
         return
 
     game["used_words"].add(word)
