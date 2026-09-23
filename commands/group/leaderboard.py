@@ -9,7 +9,15 @@ import os
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 
-from branding import header
+from branding import header, DOT_DIVIDER
+
+GAME_ICONS = {
+    "tictactoe": "🎮",
+    "rps": "✊",
+    "trivia": "❓",
+    "wcg": "🔤",
+    "hangman": "🎯",
+}
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PERSISTENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(_THIS_DIR)))
@@ -55,8 +63,14 @@ async def leaderboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     for i, (_, entry) in enumerate(ranked):
         rank_icon = medals[i] if i < len(medals) else f"{i + 1}."
         total = sum(entry["wins"].values())
-        breakdown = ", ".join(f"{g}: {c}" for g, c in entry["wins"].items())
-        lines.append(f"{rank_icon} {entry['name']} - {total} win(s)  ({breakdown})")
+        win_word = "win" if total == 1 else "wins"
+        breakdown = "  ".join(
+            f"{GAME_ICONS.get(g, '•')} {c}" for g, c in entry["wins"].items()
+        )
+        lines.append(f"{rank_icon} {entry['name']} — {total} {win_word}")
+        lines.append(f"    {breakdown}")
+        if i != len(ranked) - 1:
+            lines.append(DOT_DIVIDER)
 
     await update.message.reply_text("\n".join(lines))
 
