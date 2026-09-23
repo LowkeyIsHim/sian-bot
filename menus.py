@@ -47,6 +47,8 @@ GROUP_PUBLIC_COMMANDS = [
     BotCommand("trivia", "Start a trivia round"),
     BotCommand("startwcg", "Start a word chain game"),
     BotCommand("endwcg", "End the word chain game"),
+    BotCommand("hangman", "Start a hangman game"),
+    BotCommand("endhangman", "End the hangman game (admins only)"),
     BotCommand("report", "Report a message to admins (reply to it)"),
     BotCommand("userinfo", "See someone's profile (reply to their message)"),
     BotCommand("rules", "See this group's rules"),
