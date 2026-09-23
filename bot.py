@@ -58,7 +58,7 @@ from commands.group import (
     verification,
     word_guard,
 )
-from commands.group.games import rps, tictactoe, trivia, word_chain
+from commands.group.games import hangman, rps, tictactoe, trivia, word_chain
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -86,6 +86,7 @@ COMMAND_MODULES = [
     word_chain,
     rps,
     trivia,
+    hangman,
     group_menu,
     tagall,
     moderation,
