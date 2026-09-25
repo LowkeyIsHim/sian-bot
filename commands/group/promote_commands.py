@@ -16,6 +16,7 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes, CommandHandler
 
 import access
+from branding import header
 from menus import refresh_group_menu
 
 
@@ -67,7 +68,7 @@ async def promote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     access.grant_group_admin(target.id)
     await refresh_group_menu(context.bot, chat_id, target.id)
-    await update.message.reply_text(f"{target.first_name} is now a group admin.")
+    await update.message.reply_text(f"⬆️ {target.first_name} is now a group admin.")
 
 
 async def demote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -117,7 +118,7 @@ async def demote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"still show as admin in Telegram, remove that manually in Group Info."
         )
     else:
-        await update.message.reply_text(f"{target.first_name} is no longer a group admin.")
+        await update.message.reply_text(f"⬇️ {target.first_name} is no longer a group admin.")
 
 
 async def _describe_admin(member) -> str:
@@ -137,7 +138,7 @@ async def listadmin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"Couldn't fetch admins: {e}")
         return
     lines = [await _describe_admin(m) for m in members]
-    text = "*group admins*\n" + "\n".join(f"• {line}" for line in lines)
+    text = f"{header('group admins')}\n\n" + "\n".join(f"• {line}" for line in lines)
     await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
 
 
