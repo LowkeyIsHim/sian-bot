@@ -24,6 +24,7 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes, CommandHandler
 
 import access
+from branding import header
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))              # .../bot_src/commands/group
 _PERSISTENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(_THIS_DIR)))  # above bot_src
@@ -88,10 +89,11 @@ def remove_word(chat_id: int, word: str) -> bool:
 
 
 def _format_rule(kind: str, rule: dict) -> str:
+    status_icon = "🟢" if rule["enabled"] else "🔴"
     lines = [
-        f"*{kind}*",
-        f"enabled: {rule['enabled']}",
-        f"action: {rule['action']}",
+        header(kind), "",
+        f"{status_icon} enabled: {rule['enabled']}",
+        f"action: *{rule['action']}*",
     ]
     if rule["action"] == "warn":
         lines.append(f"warn limit: {rule['warn_limit']}")
@@ -158,19 +160,19 @@ def _make_settings_command(kind: str):
 
         if sub == "on":
             _set_field(chat_id, kind, "enabled", True)
-            await reply(f"{kind} enabled.")
+            await reply(f"🟢 {kind} enabled.")
         elif sub == "off":
             _set_field(chat_id, kind, "enabled", False)
-            await reply(f"{kind} disabled.")
+            await reply(f"🔴 {kind} disabled.")
         elif sub == "action" and len(args) > 1 and args[1].lower() in VALID_ACTIONS:
             _set_field(chat_id, kind, "action", args[1].lower())
-            await reply(f"{kind} action set to {args[1].lower()}.")
+            await reply(f"⚙️ {kind} action set to {args[1].lower()}.")
         elif sub == "warnlimit" and len(args) > 1 and args[1].isdigit():
             _set_field(chat_id, kind, "warn_limit", int(args[1]))
-            await reply(f"{kind} warn limit set to {args[1]}.")
+            await reply(f"⚙️ {kind} warn limit set to {args[1]}.")
         elif sub == "muteminutes" and len(args) > 1 and args[1].isdigit():
             _set_field(chat_id, kind, "mute_minutes", int(args[1]))
-            await reply(f"{kind} mute duration set to {args[1]} minutes.")
+            await reply(f"⚙️ {kind} mute duration set to {args[1]} minutes.")
         elif kind == "antiword" and sub == "addword" and len(args) > 1:
             word = " ".join(args[1:])
             if add_word(chat_id, word):
