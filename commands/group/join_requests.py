@@ -8,11 +8,14 @@ buttons. /approve and /decline also work as manual fallback commands,
 run inside the group.
 """
 
+import html
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import TelegramError
 from telegram.ext import CallbackQueryHandler, ChatJoinRequestHandler, CommandHandler, ContextTypes
 
 import access
+from branding import header
 
 
 async def _on_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -26,13 +29,18 @@ async def _on_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     ]])
 
     username_note = f"@{user.username}" if user.username else "(no username)"
-    text = f"📥 join request for {chat.title}\n\n{user.first_name} {username_note}\nid: {user.id}"
+    text = (
+        f"{header('join request')}\n\n"
+        f"📥 for <b>{html.escape(chat.title or 'this group')}</b>\n\n"
+        f"{html.escape(user.first_name)} {html.escape(username_note)}\n"
+        f"id: {user.id}"
+    )
 
     data = access.list_access()
     recipients = set(data["creators"]) | set(data["group_admins"])
     for admin_id in recipients:
         try:
-            await context.bot.send_message(admin_id, text, reply_markup=keyboard)
+            await context.bot.send_message(admin_id, text, reply_markup=keyboard, parse_mode="HTML")
         except TelegramError:
             pass  # that admin hasn't DM'd the bot yet
 
@@ -68,7 +76,7 @@ async def approve_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     try:
         await context.bot.approve_chat_join_request(update.effective_chat.id, int(context.args[0]))
-        await update.message.reply_text(f"Approved {context.args[0]}.")
+        await update.message.reply_text(f"✅ Approved {context.args[0]}.")
     except TelegramError as e:
         await update.message.reply_text(f"Couldn't approve: {e}")
 
@@ -83,7 +91,7 @@ async def decline_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     try:
         await context.bot.decline_chat_join_request(update.effective_chat.id, int(context.args[0]))
-        await update.message.reply_text(f"Declined {context.args[0]}.")
+        await update.message.reply_text(f"❌ Declined {context.args[0]}.")
     except TelegramError as e:
         await update.message.reply_text(f"Couldn't decline: {e}")
 
