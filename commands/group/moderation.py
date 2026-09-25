@@ -58,7 +58,7 @@ async def mute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         mention = await mention_html(context, chat_id, target.id)
         await _delete_command(update)
-        await context.bot.send_message(chat_id, f"{mention} muted for {minutes} minute(s).", parse_mode="HTML")
+        await context.bot.send_message(chat_id, f"🔇 {mention} muted for {minutes} minute(s).", parse_mode="HTML")
     except TelegramError as e:
         await update.message.reply_text(f"Couldn't mute them: {e}")
 
@@ -81,7 +81,7 @@ async def unmute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         mention = await mention_html(context, chat_id, target.id)
         await _delete_command(update)
-        await context.bot.send_message(chat_id, f"{mention} unmuted.", parse_mode="HTML")
+        await context.bot.send_message(chat_id, f"🔊 {mention} unmuted.", parse_mode="HTML")
     except TelegramError as e:
         await update.message.reply_text(f"Couldn't unmute them: {e}")
 
@@ -98,7 +98,7 @@ async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.ban_chat_member(chat_id, target.id)
         mention = await mention_html(context, chat_id, target.id)
         await _delete_command(update)
-        await context.bot.send_message(chat_id, f"{mention} banned.", parse_mode="HTML")
+        await context.bot.send_message(chat_id, f"🔨 {mention} banned.", parse_mode="HTML")
     except TelegramError as e:
         await update.message.reply_text(f"Couldn't ban them: {e}")
 
@@ -114,7 +114,7 @@ async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         await context.bot.unban_chat_member(chat_id, user_id, only_if_banned=True)
         await _delete_command(update)
-        await context.bot.send_message(chat_id, f"Unbanned {user_id}.")
+        await context.bot.send_message(chat_id, f"✅ Unbanned {user_id}.")
     except TelegramError as e:
         await update.message.reply_text(f"Couldn't unban them: {e}")
 
@@ -130,7 +130,7 @@ async def warn(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     count = add_warning(chat_id, target.id)
     mention = await mention_html(context, chat_id, target.id)
     await _delete_command(update)
-    await context.bot.send_message(chat_id, f"{mention} now has {count} warning(s).", parse_mode="HTML")
+    await context.bot.send_message(chat_id, f"⚠️ {mention} now has {count} warning(s).", parse_mode="HTML")
 
 
 async def clearwarns(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -144,7 +144,7 @@ async def clearwarns(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     clear_warnings(chat_id, target.id)
     mention = await mention_html(context, chat_id, target.id)
     await _delete_command(update)
-    await context.bot.send_message(chat_id, f"Cleared warnings for {mention}.", parse_mode="HTML")
+    await context.bot.send_message(chat_id, f"🧹 Cleared warnings for {mention}.", parse_mode="HTML")
 
 
 async def warnings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
