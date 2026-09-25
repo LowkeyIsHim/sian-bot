@@ -32,7 +32,7 @@ async def grant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if access.grant_access(target):
         await refresh_private_menu(context.bot, target)
-        await update.message.reply_text(f"Access granted to {target}.")
+        await update.message.reply_text(f"🔓 Access granted to {target}.")
     else:
         await update.message.reply_text(f"{target} already has access.")
 
@@ -49,7 +49,7 @@ async def revoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if access.revoke_access(target):
         await refresh_private_menu(context.bot, target)
-        await update.message.reply_text(f"Access revoked for {target}.")
+        await update.message.reply_text(f"🔒 Access revoked for {target}.")
     else:
         await update.message.reply_text(
             f"{target} wasn't in the granted list (or is a creator, who can't be revoked)."
