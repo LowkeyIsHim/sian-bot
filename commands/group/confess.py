@@ -88,11 +88,11 @@ async def setconfessions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if chat_id in data["enabled_groups"]:
         data["enabled_groups"].remove(chat_id)
         _save_settings(data)
-        await update.message.reply_text("Confessions disabled for this group.")
+        await update.message.reply_text("🔴 Confessions disabled for this group.")
     else:
         data["enabled_groups"].append(chat_id)
         _save_settings(data)
-        await update.message.reply_text("Confessions enabled for this group. Members can now DM me /confess.")
+        await update.message.reply_text("🟢 Confessions enabled for this group. Members can now DM me /confess.")
 
 
 async def confess(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -122,7 +122,7 @@ async def confess(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         confession_text = f"{header('anonymous confession')}\n\n{text}\n\n_#{entry_id}_"
         try:
             await context.bot.send_message(chat_id, confession_text, parse_mode="Markdown")
-            await update.message.reply_text("Sent - anonymously, no one will know it was you.")
+            await update.message.reply_text("🕊️ Sent - anonymously, no one will know it was you.")
         except TelegramError:
             await update.message.reply_text("Couldn't post that right now, try again shortly.")
         return
@@ -161,7 +161,7 @@ async def clearconfessionlog(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return  # silent
 
     _save_log({"next_id": 1, "entries": []})
-    await update.message.reply_text("Confession log cleared.")
+    await update.message.reply_text("🧹 Confession log cleared.")
 
 
 def register(app) -> None:
