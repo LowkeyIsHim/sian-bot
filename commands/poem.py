@@ -50,6 +50,12 @@ async def poem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     title, body = split_title(reply)
+    if theme:
+        # user gave a theme - title matches it exactly, but strip characters
+        # that would break the bolded Markdown line below (e.g. an
+        # underscore in "/poem grim_reaper" would otherwise silently
+        # break the whole message).
+        title = theme.strip().title().replace("*", "").replace("_", " ").replace("`", "")
     if title:
         await update.message.reply_text(f"✒️ *{title}*", parse_mode="Markdown")
         await update.message.reply_text(body)
