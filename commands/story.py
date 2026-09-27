@@ -47,6 +47,8 @@ async def story(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     title, body = split_title(reply)
+    if theme:
+        title = theme.strip().title().replace("*", "").replace("_", " ").replace("`", "")
     if title:
         await update.message.reply_text(f"📖 *{title}*", parse_mode="Markdown")
         await update.message.reply_text(body)
