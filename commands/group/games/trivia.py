@@ -4,6 +4,7 @@ First correct answer wins the round. Open to everyone.
 """
 
 import asyncio
+import logging
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
@@ -12,6 +13,8 @@ from ai import get_trivia_question, RateLimitError
 from branding import header, DOT_DIVIDER
 from commands.group.leaderboard import record_win
 from rate_limit import global_is_rate_limited
+
+logger = logging.getLogger(__name__)
 
 TRIVIA_SECONDS = 20
 
@@ -23,8 +26,8 @@ async def trivia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("This only works inside a group.")
         return
 
-    if global_is_rate_limited("ai", limit=15, window_seconds=30):
-        await update.message.reply_text("give it a moment - too many requests right now.")
+    if global_is_rate_limited("trivia", limit=10, window_seconds=20):
+        await update.message.reply_text("give it a moment - too many rounds starting at once.")
         return
 
     try:
@@ -33,6 +36,7 @@ async def trivia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("i need a moment - try again shortly.")
         return
     except Exception:
+        logger.exception("Error generating trivia question")
         await update.message.reply_text("couldn't come up with a question - try again.")
         return
 
