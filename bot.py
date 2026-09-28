@@ -29,6 +29,7 @@ from menus import PUBLIC_COMMANDS, refresh_private_menu
 from commands import (
     access_commands,
     aesthetic,
+    backup,
     chat,
     developer,
     poem,
@@ -78,6 +79,7 @@ COMMAND_MODULES = [
     whoami,
     developer,
     access_commands,
+    backup,
     promote_commands,
     admin_sync,
     confess,
