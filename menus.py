@@ -36,6 +36,7 @@ CREATOR_DM_COMMANDS = [
     BotCommand("listaccess", "List who has access"),
     BotCommand("confessionlog", "Private log of who sent each confession"),
     BotCommand("clearconfessionlog", "Wipe the confession log"),
+    BotCommand("backup", "Send a zip of all bot data files"),
 ]
 
 GROUP_PUBLIC_COMMANDS = [
@@ -53,6 +54,8 @@ GROUP_PUBLIC_COMMANDS = [
     BotCommand("userinfo", "See someone's profile (reply to their message)"),
     BotCommand("rules", "See this group's rules"),
     BotCommand("leaderboard", "See who's winning the games"),
+    BotCommand("invite", "Get your personal invite link"),
+    BotCommand("topinviters", "See who's brought in the most people"),
 ]
 
 GROUP_ADMIN_COMMANDS = [
