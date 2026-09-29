@@ -70,6 +70,7 @@ GROUP_ADMIN_COMMANDS = [
     BotCommand("purge", "Delete a range of messages (reply to the start)"),
     BotCommand("lockdown", "Toggle admins-only messaging"),
     BotCommand("setrules", "Set this group's rules"),
+    BotCommand("news", "Configure the auto-posting news feed"),
     BotCommand("approve", "Approve a pending join request"),
     BotCommand("decline", "Decline a pending join request"),
     BotCommand("antiflood", "Configure flood protection"),
