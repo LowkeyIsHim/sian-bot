@@ -32,6 +32,8 @@ MOD_TEXT = (
     "_reply to a message, deletes from there to your command_\n\n"
     "*/lockdown*\n"
     "_toggle admins-only messaging - emergency switch_\n\n"
+    "*/news*\n"
+    "_configure the auto-posting news feed - send with no arguments to see setup_\n\n"
     "group admin access needed."
 )
 
@@ -45,6 +47,9 @@ FUN_TEXT = (
     "_reply to a bad message, quietly flags it to admins_\n\n"
     "*/userinfo*\n"
     "_reply to someone to see their profile_\n\n"
+    "*/invite*\n"
+    "_get your personal invite link - bring people in, get the credit_\n"
+    "*/topinviters* to see who's leading\n\n"
     "open to everyone."
 )
 
