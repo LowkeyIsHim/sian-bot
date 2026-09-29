@@ -22,7 +22,7 @@ from telegram.error import TelegramError
 from telegram.ext import CommandHandler, ContextTypes
 
 import access
-from branding import header
+from branding import header, DOT_DIVIDER
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +170,7 @@ async def _run_check(bot) -> None:
         cats_to_check = list(CATEGORIES.keys()) if "all" in categories else categories
         seen.setdefault(chat_key, {})
 
+        sections = []
         for cat in cats_to_check:
             if cat not in CATEGORIES:
                 continue
@@ -183,20 +184,24 @@ async def _run_check(bot) -> None:
             if not new_items:
                 continue
 
-            lines = [f"{info['icon']} *{info['label']}*", ""]
+            lines = [f"{info['icon']} *{info['label']}*"]
             for it in new_items:
                 lines.append(f"• [{_md_safe(it['title'])}]({it['link']})")
-
-            try:
-                await bot.send_message(
-                    chat_id, "\n".join(lines), parse_mode="Markdown", disable_web_page_preview=True
-                )
-            except TelegramError as e:
-                logger.warning(f"Could not post news to {chat_id}: {e}")
+            sections.append("\n".join(lines))
 
             seen[chat_key].setdefault(cat, [])
             seen[chat_key][cat] = (seen[chat_key][cat] + [it["link"] for it in new_items])[-SEEN_CAP_PER_CATEGORY:]
             seen_changed = True
+
+        if sections:
+            body = f"\n\n{DOT_DIVIDER}\n\n".join(sections)
+            text = f"{header('news')}\n\n{body}"
+            try:
+                await bot.send_message(
+                    chat_id, text, parse_mode="Markdown", disable_web_page_preview=True
+                )
+            except TelegramError as e:
+                logger.warning(f"Could not post news to {chat_id}: {e}")
 
         conf["last_run"] = now.isoformat()
         settings_changed = True
