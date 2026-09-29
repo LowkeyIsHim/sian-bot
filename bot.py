@@ -18,6 +18,7 @@ each other. member_tracker/flood_guard/link_guard/word_guard each use
 their own group number (1-4) for exactly this reason.
 """
 
+import asyncio
 import logging
 import os
 
@@ -49,6 +50,7 @@ from commands.group import (
     leaderboard,
     member_tracker,
     moderation,
+    news,
     promote_commands,
     purge,
     report,
@@ -99,6 +101,7 @@ COMMAND_MODULES = [
     verification,
     join_requests,
     leaderboard,
+    news,
     group_settings,
     flood_guard,
     link_guard,
@@ -128,6 +131,8 @@ async def _post_init(app: Application) -> None:
 
     for creator_id in access.CREATOR_IDS:
         await refresh_private_menu(app.bot, creator_id)
+
+    asyncio.create_task(news.start_background_loop(app.bot))
 
 
 async def _error_handler(update, context) -> None:
