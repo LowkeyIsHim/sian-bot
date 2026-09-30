@@ -1,3 +1,4 @@
+
 """
 /news - configurable auto-posting news feed for a group. Pick categories
 (or "all"), set the posting interval in hours, toggle on/off. Runs on
@@ -175,7 +176,7 @@ async def _run_check(bot) -> None:
             if cat not in CATEGORIES:
                 continue
             info = CATEGORIES[cat]
-            items = _fetch_feed_items(info["feed"])
+            items = await asyncio.to_thread(_fetch_feed_items, info["feed"])
             if not items:
                 continue
 
