@@ -27,10 +27,21 @@ class RateLimitError(Exception):
 
 
 def _post_with_retry(payload: dict, retries: int = 2, backoff: float = 3.0) -> dict:
-    """POSTs to the Gemini API, retrying briefly on 429s (rate limits
-    are usually per-minute and clear up fast) before giving up."""
+    """POSTs to the Gemini API, retrying briefly on 429s (rate limits are
+    usually per-minute and clear up fast) AND on network-level failures
+    (timeouts, connection errors - Gemini occasionally takes longer than
+    our timeout to respond, which is a different failure mode than a 429
+    and was previously slipping past this retry logic entirely)."""
+    last_network_error = None
     for attempt in range(retries + 1):
-        resp = requests.post(API_URL, json=payload, timeout=60)
+        try:
+            resp = requests.post(API_URL, json=payload, timeout=60)
+        except requests.exceptions.RequestException as e:
+            last_network_error = e
+            if attempt < retries:
+                time.sleep(backoff * (attempt + 1))
+                continue
+            raise
         if resp.status_code == 429:
             if attempt < retries:
                 time.sleep(backoff * (attempt + 1))
@@ -38,6 +49,7 @@ def _post_with_retry(payload: dict, retries: int = 2, backoff: float = 3.0) -> d
             raise RateLimitError("Gemini rate limit hit after retries")
         resp.raise_for_status()
         return resp.json()
+    raise last_network_error
 
 # Keeps a short rolling conversation per chat_id so replies stay in context.
 _conversations: dict[int, list[dict]] = {}
@@ -208,7 +220,7 @@ def get_image_search_phrase(poem_text: str) -> str:
         "cozy flatlays), golden hour and sunsets, family or togetherness "
         "silhouettes, spiritual or reflective moments, moody portraits "
         "with dramatic shadow, quiet nature scenes. Avoid party, "
-        "or overtly upbeat/social imagery regardless of mood "
+        "nightlife, or overtly upbeat/social imagery regardless of mood "
         "chosen.\n\nPoem:\n" + poem_text
     )
     payload = {
