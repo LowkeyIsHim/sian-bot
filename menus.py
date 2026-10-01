@@ -78,6 +78,10 @@ GROUP_ADMIN_COMMANDS = [
     BotCommand("antiflood", "Configure flood protection"),
     BotCommand("antilink", "Configure link protection"),
     BotCommand("antiword", "Configure banned words"),
+    BotCommand("musicaccess", "Set who can request music"),
+    BotCommand("allowmusic", "Allow a member to request music (reply)"),
+    BotCommand("disallowmusic", "Remove a member's music access (reply)"),
+    BotCommand("musicusers", "List members allowed to request music"),
 ]
 
 CREATOR_GROUP_COMMANDS = [
