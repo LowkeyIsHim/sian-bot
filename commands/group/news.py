@@ -4,8 +4,10 @@
 right now with /news now. Runs on RSS feeds - the legitimate way to pull
 headlines.
 
-Posts are plain text only: no links, no emojis, no markdown. Each section
-is labelled with its category and source, e.g. "WORLD · BBC".
+Each post is a mood-matched Pexels photo on top (partially desaturated to
+match the bot's look) with the headlines as the caption. Text only, no
+links, no emojis, no markdown. Sections are labelled like "WORLD · BBC".
+If the photo can't be fetched, it falls back to a plain text post.
 
 A background loop (started from bot.py's post_init) checks every 5
 minutes whether any enabled group's interval has elapsed.
@@ -16,11 +18,14 @@ import html
 import json
 import logging
 import os
+import random
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from io import BytesIO
 
 import requests
+from PIL import Image, ImageEnhance
 from telegram import Update
 from telegram.error import TelegramError
 from telegram.ext import CommandHandler, ContextTypes
@@ -39,6 +44,21 @@ CHECK_INTERVAL_SECONDS = 300  # background loop wakes up every 5 min
 MAX_ITEMS_PER_POST = 3        # cap headlines per category per post
 SEEN_CAP_PER_CATEGORY = 50
 MAX_TITLE_CHARS = 120
+
+CAPTION_LIMIT = 1024          # Telegram's max caption length
+PHOTO_DESATURATE = 0.5        # 1.0 = untouched colour, 0 = grayscale
+PHOTO_MAX_WIDTH = 1280
+
+# Stock-photo searches per lead category. Deliberately generic and calm so a
+# heavy headline never gets a mismatched or graphic photo.
+PHOTO_QUERIES = {
+    "world": "city skyline dusk",
+    "political": "government building architecture",
+    "crypto": "city lights night finance",
+    "tech": "technology abstract dark",
+    "sports": "stadium lights",
+    "entertainment": "cinema lights red curtain",
+}
 
 CATEGORIES = {
     "world": {"label": "WORLD", "source": "BBC", "feed": "https://feeds.bbci.co.uk/news/world/rss.xml"},
@@ -107,11 +127,12 @@ def _categories_for(conf: dict) -> list[str]:
 
 
 async def _build_post(chat_key: str, conf: dict, seen: dict):
-    """Returns (text, additions). additions = {category: [links]} that must
-    only be marked as seen AFTER the post is actually sent."""
+    """Returns (title, body, additions). additions = {category: [links]}
+    that must only be marked as seen AFTER the post is actually sent. The
+    first key in additions is the lead category (used to pick the photo)."""
     cats = _categories_for(conf)
     if not cats:
-        return None, {}
+        return None, None, {}
 
     # fetch every feed at once instead of one after another
     feeds = await asyncio.gather(
@@ -141,17 +162,75 @@ async def _build_post(chat_key: str, conf: dict, seen: dict):
         additions[cat] = [it["link"] for it in fresh]
 
     if not sections:
-        return None, {}
+        return None, None, {}
 
     date = datetime.now(timezone.utc).strftime("%a %d %b %Y")
-    text = f"GODDESS NEWS\n{date}\n{LINE}\n\n" + "\n\n".join(sections)
-    return text, additions
+    title = f"GODDESS NEWS\n{date}\n{LINE}"
+    return title, "\n\n".join(sections), additions
 
 
 def _commit_seen(seen: dict, chat_key: str, additions: dict) -> None:
     chat_seen = seen.setdefault(chat_key, {})
     for cat, links in additions.items():
         chat_seen[cat] = (chat_seen.get(cat, []) + links)[-SEEN_CAP_PER_CATEGORY:]
+
+
+# ---------- photo & sending ----------
+def _fetch_photo(query: str):
+    """Pexels photo, partially desaturated. Returns a BytesIO or None."""
+    key = os.environ.get("PEXELS_API_KEY")
+    if not key:
+        return None
+    try:
+        r = requests.get(
+            "https://api.pexels.com/v1/search",
+            params={"query": query, "per_page": 15, "orientation": "landscape"},
+            headers={"Authorization": key},
+            timeout=15,
+        )
+        r.raise_for_status()
+        photos = r.json().get("photos", [])
+        if not photos:
+            return None
+        pick = random.choice(photos)
+        img_resp = requests.get(pick["src"]["large"], timeout=20)
+        img_resp.raise_for_status()
+
+        img = Image.open(BytesIO(img_resp.content)).convert("RGB")
+        if img.width > PHOTO_MAX_WIDTH:
+            ratio = PHOTO_MAX_WIDTH / img.width
+            img = img.resize((PHOTO_MAX_WIDTH, int(img.height * ratio)))
+        img = ImageEnhance.Color(img).enhance(PHOTO_DESATURATE)
+
+        out = BytesIO()
+        img.save(out, "JPEG", quality=88)
+        out.seek(0)
+        out.name = "news.jpg"
+        return out
+    except Exception as e:
+        logger.warning(f"Could not fetch news photo: {e}")
+        return None
+
+
+async def _send_news(bot, chat_id: int, title: str, body: str, lead_cat: str) -> None:
+    """Photo on top, headlines as the caption. Long posts put just the title
+    on the photo and the headlines in a message right under it. No photo?
+    Plain text post."""
+    full = f"{title}\n\n{body}"
+    photo = await asyncio.to_thread(_fetch_photo, PHOTO_QUERIES.get(lead_cat, "news"))
+
+    if photo:
+        try:
+            if len(full) <= CAPTION_LIMIT:
+                await bot.send_photo(chat_id, photo, caption=full)
+            else:
+                await bot.send_photo(chat_id, photo, caption=title)
+                await bot.send_message(chat_id, body, disable_web_page_preview=True)
+            return
+        except TelegramError as e:
+            logger.warning(f"Photo post failed, falling back to text: {e}")
+
+    await bot.send_message(chat_id, full, disable_web_page_preview=True)
 
 
 # ---------- command ----------
@@ -196,12 +275,12 @@ async def news_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text("Set categories first: /news categories world tech")
             return
         seen = _load(SEEN_FILE)
-        text, additions = await _build_post(chat_key, conf, seen)
-        if not text:
+        title, body, additions = await _build_post(chat_key, conf, seen)
+        if not body:
             await update.message.reply_text("No new headlines right now.")
             return
         try:
-            await context.bot.send_message(update.effective_chat.id, text, disable_web_page_preview=True)
+            await _send_news(context.bot, update.effective_chat.id, title, body, next(iter(additions)))
         except TelegramError as e:
             logger.warning(f"Could not post news to {chat_key}: {e}")
             return
@@ -260,11 +339,11 @@ async def _run_check(bot) -> None:
             if (now - last_run).total_seconds() < interval_hours * 3600:
                 continue
 
-        text, additions = await _build_post(chat_key, conf, seen)
+        title, body, additions = await _build_post(chat_key, conf, seen)
 
-        if text:
+        if body:
             try:
-                await bot.send_message(int(chat_key), text, disable_web_page_preview=True)
+                await _send_news(bot, int(chat_key), title, body, next(iter(additions)))
                 # only mark stories as seen once they actually went out
                 _commit_seen(seen, chat_key, additions)
                 seen_changed = True
