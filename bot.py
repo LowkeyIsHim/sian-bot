@@ -108,6 +108,8 @@ COMMAND_MODULES = [
     link_guard,
     word_guard,
     member_tracker,
+    invites,
+    stats,
     chat,
 ]
 
