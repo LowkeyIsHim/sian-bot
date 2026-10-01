@@ -16,6 +16,7 @@ from pathlib import Path
 
 from telegram import Update
 from telegram.constants import ParseMode
+from commands.group.invites import get_count as invite_count
 from commands.group.leaderboard import GAME_LABELS, _load as _load_leaderboard
 from telegram.ext import (
     CommandHandler,
@@ -188,7 +189,8 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for key, label in MEDIA_LABELS:
         if rec.get(key):
             lines.append(f"{label}: {rec[key]}")
-    lines.append(f"👥 Members added: {rec['added']}")
+    via_link = invite_count(m.chat_id, target.id)
+    lines.append(f"👥 Members added: {rec['added'] + via_link}")
 
     wins = (
         _load_leaderboard().get(str(m.chat_id), {}).get(str(target.id), {}).get("wins", {})
