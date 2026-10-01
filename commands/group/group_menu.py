@@ -92,6 +92,8 @@ def _main_keyboard() -> InlineKeyboardMarkup:
          InlineKeyboardButton("🎮 Games", callback_data="g:games")],
         [InlineKeyboardButton("🔨 Moderation", callback_data="g:mod")],
         [InlineKeyboardButton("🛡️ Auto-Protection", callback_data="g:protect")],
+        [InlineKeyboardButton("📊 Stats", callback_data="g:stats"),
+         InlineKeyboardButton("🔨 Moderation", callback_data="g:mod")],
     ])
 
 
@@ -156,6 +158,10 @@ async def gmenu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     chat_id = query.message.chat_id
     user_id = query.from_user.id
     is_privileged = access.is_creator(user_id) or access.is_group_admin(user_id)
+    
+    if data == "g:stats":
+        await query.edit_message_text(STATS_TEXT, parse_mode="Markdown", reply_markup=_back())
+        return
 
     if data == "g:main":
         await query.edit_message_text(MAIN_TEXT, parse_mode="Markdown", reply_markup=_main_keyboard())
