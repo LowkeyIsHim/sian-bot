@@ -56,6 +56,8 @@ GROUP_PUBLIC_COMMANDS = [
     BotCommand("leaderboard", "See who's winning the games"),
     BotCommand("invite", "Get your personal invite link"),
     BotCommand("topinviters", "See who's brought in the most people"),
+    BorCommand("stats", "See your stats (reply to see someone else's)"),
+    BotCommand("topchatters", "See the most active members"),
 ]
 
 GROUP_ADMIN_COMMANDS = [
