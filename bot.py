@@ -56,6 +56,7 @@ from commands.group import (
     report,
     roast,
     settings as group_settings,
+    stats,
     tagall,
     userinfo,
     verification,
