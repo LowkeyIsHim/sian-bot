@@ -44,6 +44,7 @@ from commands.group import (
     confess,
     flood_guard,
     group_menu,
+    invites,
     link_guard,
     lockdown,
     join_requests,
