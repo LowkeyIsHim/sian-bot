@@ -1,7 +1,7 @@
 """commands/group/stats.py
 
 Group engagement stats: messages, media types, join date, members added,
-and per-game record. Commands: /stats (reply to see someone else's),
+and game wins (read from leaderboard.json). Commands: /stats (reply to see someone else's),
 /topchatters.
 
 Drop into commands/group/, add "commands.group.stats" to COMMAND_MODULES.
@@ -16,6 +16,7 @@ from pathlib import Path
 
 from telegram import Update
 from telegram.constants import ParseMode
+from commands.group.leaderboard import GAME_LABELS, _load as _load_leaderboard
 from telegram.ext import (
     CommandHandler,
     ContextTypes,
@@ -83,28 +84,12 @@ def _user(chat_id, user) -> dict:
             "messages": 0,
             "replies": 0,
             "added": 0,
-            "games": {},
         }
         for key, _ in MEDIA_LABELS:
             rec[key] = 0
         chat[str(user.id)] = rec
     rec["name"] = user.full_name  # keep display name fresh
     return rec
-
-
-# ---------- public hook for the games ----------
-def record_game(chat_id, user, game: str, won: bool) -> None:
-    """Call from each game when a round ends, once per participant.
-    e.g. record_game(chat.id, winner, "tictactoe", True)
-    """
-    if user is None or user.is_bot:
-        return
-    rec = _user(chat_id, user)
-    g = rec["games"].setdefault(game, {"played": 0, "wins": 0})
-    g["played"] += 1
-    if won:
-        g["wins"] += 1
-    _dirty()
 
 
 # ---------- passive trackers ----------
@@ -205,13 +190,15 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"{label}: {rec[key]}")
     lines.append(f"👥 Members added: {rec['added']}")
 
-    if rec["games"]:
+    wins = (
+        _load_leaderboard().get(str(m.chat_id), {}).get(str(target.id), {}).get("wins", {})
+    )
+    wins = {g: c for g, c in wins.items() if c > 0}
+    if wins:
         lines.append("")
-        lines.append("🎮 <b>Games</b>")
-        for game, g in sorted(rec["games"].items()):
-            lines.append(
-                f"• {html.escape(game)}: {g['wins']}W / {g['played']} played"
-            )
+        lines.append(f"🏆 <b>Game wins</b> ({sum(wins.values())} total)")
+        for game, count in sorted(wins.items(), key=lambda kv: kv[1], reverse=True):
+            lines.append(f"• {html.escape(GAME_LABELS.get(game, game))}: {count}")
 
     await m.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
