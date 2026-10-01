@@ -4,27 +4,50 @@
 wcg, hangman). Open to everyone.
 """
 
+import html
 import json
 import os
 
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, CommandHandler
 
 from branding import header, DOT_DIVIDER
 
+# Kept under the same names in case other modules import them.
 GAME_ICONS = {
-    "tictactoe": "🎮",
+    "tictactoe": "❌",
     "rps": "✊",
-    "trivia": "❓",
+    "trivia": "🧠",
     "wcg": "🔤",
     "hangman": "🎯",
 }
 GAME_LABELS = {
-    "tictactoe": "tic-tac-toe",
-    "rps": "rock paper scissors",
-    "trivia": "trivia",
-    "wcg": "word chain",
-    "hangman": "hangman",
+    "tictactoe": "Tic-Tac-Toe",
+    "rps": "Rock Paper Scissors",
+    "trivia": "Trivia",
+    "wcg": "Word Chain",
+    "hangman": "Hangman",
+}
+# Short names for the per-player breakdown line (always text, never icon-only).
+GAME_SHORT = {
+    "tictactoe": "TicTacToe",
+    "rps": "RPS",
+    "trivia": "Trivia",
+    "wcg": "WordChain",
+    "hangman": "Hangman",
+}
+# Typed variations people will actually use.
+ALIASES = {
+    "ttt": "tictactoe",
+    "tic": "tictactoe",
+    "tic-tac-toe": "tictactoe",
+    "rockpaperscissors": "rps",
+    "wordchain": "wcg",
+    "word-chain": "wcg",
+    "chain": "wcg",
+    "word": "wcg",
+    "hang": "hangman",
 }
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -54,13 +77,36 @@ def record_win(chat_id: int, user_id: int, name: str, game: str) -> None:
     _save(data)
 
 
+# ---------- formatting helpers ----------
 def _medal(i: int) -> str:
     medals = ["🥇", "🥈", "🥉"]
-    return medals[i] if i < len(medals) else f"{i + 1}."
+    return medals[i] if i < len(medals) else f"<b>{i + 1}.</b>"
 
 
-def _game_list_hint() -> str:
-    return "/".join(GAME_ICONS.keys())
+def _wins(n: int) -> str:
+    return f"{n} win" if n == 1 else f"{n} wins"
+
+
+def _title(text: str) -> str:
+    # header() output is escaped so it's safe inside HTML parse mode
+    return f"<b>{html.escape(header(text))}</b>"
+
+
+def _games_footer() -> str:
+    cmds = "  ".join(f"<code>{g}</code>" for g in GAME_ICONS)
+    return f"{html.escape(DOT_DIVIDER)}\nsee one game: /leaderboard + {cmds}"
+
+
+def _breakdown(wins: dict) -> str:
+    parts = sorted(wins.items(), key=lambda kv: kv[1], reverse=True)
+    return "  ·  ".join(f"{GAME_SHORT.get(g, g)} {c}" for g, c in parts if c > 0)
+
+
+def _you_line(ranked_all, user_id: str, value_fn) -> str:
+    for i, (uid, entry) in enumerate(ranked_all):
+        if uid == user_id:
+            return f"\nyou: #{i + 1} · {_wins(value_fn(entry))}"
+    return ""
 
 
 async def leaderboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -73,48 +119,57 @@ async def leaderboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.message.reply_text("No games have been won here yet.")
         return
 
-    game_filter = context.args[0].lower() if context.args else None
+    me = str(update.effective_user.id)
+    arg = context.args[0].lower() if context.args else None
+    game_filter = ALIASES.get(arg, arg) if arg else None
 
     if game_filter and game_filter not in GAME_ICONS:
+        names = "\n".join(
+            f"{GAME_ICONS[g]} {GAME_LABELS[g]} → <code>/leaderboard {g}</code>"
+            for g in GAME_ICONS
+        )
         await update.message.reply_text(
-            f"Unknown game. Try: {_game_list_hint()} - or no argument for the overall board."
+            f"Don't know that game. Pick one:\n\n{names}",
+            parse_mode=ParseMode.HTML,
         )
         return
 
+    # ----- single game board -----
     if game_filter:
-        icon, label = GAME_ICONS[game_filter], GAME_LABELS[game_filter]
-        ranked = sorted(
+        ranked_all = sorted(
             ((uid, e) for uid, e in data.items() if e["wins"].get(game_filter, 0) > 0),
             key=lambda kv: kv[1]["wins"][game_filter],
             reverse=True,
-        )[:10]
-
-        if not ranked:
-            await update.message.reply_text(f"No {label} wins here yet.")
+        )
+        if not ranked_all:
+            await update.message.reply_text(f"No {GAME_LABELS[game_filter]} wins here yet.")
             return
 
-        lines = [header(f"{icon} {label}"), ""]
-        for i, (_, entry) in enumerate(ranked):
+        icon, label = GAME_ICONS[game_filter], GAME_LABELS[game_filter]
+        lines = [f"{icon} {_title(label + ' leaderboard')}", html.escape(DOT_DIVIDER), ""]
+        for i, (_, entry) in enumerate(ranked_all[:10]):
             wins = entry["wins"][game_filter]
-            win_word = "win" if wins == 1 else "wins"
-            lines.append(f"{_medal(i)} {entry['name']} — {wins} {win_word}")
-        lines.append(f"\n{DOT_DIVIDER}\nother games: /leaderboard <{_game_list_hint()}>")
-        await update.message.reply_text("\n".join(lines))
+            lines.append(f"{_medal(i)} <b>{html.escape(entry['name'])}</b> · {_wins(wins)}")
+        lines.append(_you_line(ranked_all, me, lambda e: e["wins"][game_filter]))
+        lines.append(f"\n{_games_footer()}")
+        await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
         return
 
-    # overall board - every game combined
-    ranked = sorted(data.items(), key=lambda kv: sum(kv[1]["wins"].values()), reverse=True)[:10]
-    lines = [header("leaderboard"), ""]
-    for i, (_, entry) in enumerate(ranked):
+    # ----- overall board -----
+    ranked_all = sorted(
+        ((uid, e) for uid, e in data.items() if sum(e["wins"].values()) > 0),
+        key=lambda kv: sum(kv[1]["wins"].values()),
+        reverse=True,
+    )
+    lines = [f"🏆 {_title('leaderboard')}", html.escape(DOT_DIVIDER), ""]
+    for i, (_, entry) in enumerate(ranked_all[:10]):
         total = sum(entry["wins"].values())
-        win_word = "win" if total == 1 else "wins"
-        breakdown = "  ".join(f"{GAME_ICONS.get(g, '•')} {c}" for g, c in entry["wins"].items())
-        lines.append(f"{_medal(i)} {entry['name']} — {total} {win_word}")
-        lines.append(f"    {breakdown}")
-        if i != len(ranked) - 1:
-            lines.append(DOT_DIVIDER)
-    lines.append(f"\n{DOT_DIVIDER}\nsee one game: /leaderboard <{_game_list_hint()}>")
-    await update.message.reply_text("\n".join(lines))
+        lines.append(f"{_medal(i)} <b>{html.escape(entry['name'])}</b> · {_wins(total)}")
+        lines.append(f"      <i>{html.escape(_breakdown(entry['wins']))}</i>")
+        lines.append("")
+    lines.append(_you_line(ranked_all, me, lambda e: sum(e["wins"].values())))
+    lines.append(f"\n{_games_footer()}")
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
 def register(app) -> None:
