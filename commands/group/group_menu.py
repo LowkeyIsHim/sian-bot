@@ -72,6 +72,15 @@ GAMES_TEXT = (
     "open to everyone."
 )
 
+STATS_TEXT = (
+    f"{header('stats')}\n\n"
+    "*/stats*\n"
+    "_messages, stickers, voice notes, members added and game wins - reply to someone to see theirs_\n\n"
+    "*/topchatters*\n"
+    "_the 10 most active members_\n\n"
+    "open to everyone."
+)
+
 PROTECT_TEXT = f"{header('auto-protection')}\n\nchoose a rule to configure."
 
 
