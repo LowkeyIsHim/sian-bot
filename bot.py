@@ -51,6 +51,7 @@ from commands.group import (
     leaderboard,
     member_tracker,
     moderation,
+    music,
     news,
     promote_commands,
     purge,
