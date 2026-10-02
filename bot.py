@@ -154,6 +154,7 @@ def build_app() -> Application:
 
     for module in COMMAND_MODULES:
         module.register(app)
+        logger.info(f"registered: {module.__name__}")
 
     app.add_error_handler(_error_handler)
 
