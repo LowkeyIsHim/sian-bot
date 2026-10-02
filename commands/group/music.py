@@ -46,7 +46,6 @@ def _download_audio_sync(query: str) -> dict | None:
         },
     }
 
-    # Automatically load cookies.txt if present (root dir or bot_src level)
     if os.path.exists("cookies.txt"):
         ydl_opts["cookiefile"] = "cookies.txt"
     elif os.path.exists("../cookies.txt"):
@@ -146,6 +145,8 @@ async def music_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             caption=caption,
             parse_mode="HTML",
             reply_markup=reply_markup,
+            read_timeout=60,
+            write_timeout=60,
         )
     else:
         await update.message.reply_text(
@@ -163,6 +164,8 @@ async def music_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 duration=song["duration"],
                 caption=f"🎧 <b>{title}</b>",
                 parse_mode="HTML",
+                read_timeout=120,
+                write_timeout=120,
             )
     finally:
         if os.path.exists(song["filepath"]):
