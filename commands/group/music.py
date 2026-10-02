@@ -23,11 +23,12 @@ TEMP_DIR = "temp_music"
 
 
 def _download_audio_sync(query: str) -> dict | None:
-    """Synchronous yt-dlp download helper with YouTube anti-bot bypass."""
+    """Synchronous yt-dlp download helper with robust fallback format selection."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     ydl_opts = {
-        "format": "bestaudio/best",
+        # ba*/b* allows fallback to video streams if separate audio stream isn't served
+        "format": "ba*/b*",
         "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
@@ -38,10 +39,9 @@ def _download_audio_sync(query: str) -> dict | None:
         "no_warnings": True,
         "noplaylist": True,
         "default_search": "ytsearch1",
-        # Spoof mobile clients to bypass YouTube datacenter IP blocking
         "extractor_args": {
             "youtube": {
-                "player_client": ["ios", "android", "mweb"],
+                "player_client": ["mweb", "web", "android"],
             }
         },
     }
