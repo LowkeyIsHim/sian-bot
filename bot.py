@@ -23,6 +23,7 @@ import logging
 import os
 
 from telegram.ext import Application
+from telegram.request import HTTPXRequest
 
 import access
 import menu_ui
@@ -150,7 +151,21 @@ async def _error_handler(update, context) -> None:
 
 def build_app() -> Application:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
-    app = Application.builder().token(token).post_init(_post_init).build()
+
+    # Extended network timeouts to support large MP3 uploads on slower hosting links
+    request = HTTPXRequest(
+        connect_timeout=30.0,
+        read_timeout=60.0,
+        write_timeout=120.0,
+    )
+
+    app = (
+        Application.builder()
+        .token(token)
+        .request(request)
+        .post_init(_post_init)
+        .build()
+    )
 
     for module in COMMAND_MODULES:
         module.register(app)
