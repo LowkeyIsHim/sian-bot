@@ -32,7 +32,6 @@ def _download_audio_sync(query: str) -> dict | None:
             cookie_path = path
             break
 
-    # Strategy 1: YouTube with TV Embedded player client (bypasses datacenter bot blocks)
     yt_opts = {
         "format": "bestaudio/best",
         "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
@@ -56,6 +55,7 @@ def _download_audio_sync(query: str) -> dict | None:
 
     search_query = query if query.startswith("http") else f"ytsearch1:{query}"
 
+    # Strategy 1: YouTube
     try:
         with yt_dlp.YoutubeDL(yt_opts) as ydl:
             info = ydl.extract_info(search_query, download=True)
@@ -74,13 +74,13 @@ def _download_audio_sync(query: str) -> dict | None:
                             "title": entry.get("title", "Unknown Track"),
                             "artist": entry.get("artist") or entry.get("uploader") or "Unknown Artist",
                             "thumbnail": entry.get("thumbnail"),
-                            "duration": entry.get("duration", 0),
+                            "duration": int(entry.get("duration") or 0),
                             "yt_url": entry.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
                         }
     except Exception as e:
         print(f"[Music] YouTube strategy failed: {e}")
 
-    # Strategy 2: SoundCloud search fallback if YouTube server IP is completely blocked
+    # Strategy 2: SoundCloud Fallback
     sc_opts = {
         "format": "bestaudio/best",
         "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
@@ -113,7 +113,7 @@ def _download_audio_sync(query: str) -> dict | None:
                             "title": entry.get("title", "Unknown Track"),
                             "artist": entry.get("uploader") or "Unknown Artist",
                             "thumbnail": entry.get("thumbnail"),
-                            "duration": entry.get("duration", 0),
+                            "duration": int(entry.get("duration") or 0),
                             "yt_url": entry.get("webpage_url", "https://soundcloud.com"),
                         }
     except Exception as e:
@@ -149,7 +149,8 @@ async def music_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     title = html.escape(song["title"])
     artist = html.escape(song["artist"])
 
-    minutes, seconds = divmod(song["duration"], 60)
+    raw_duration = int(song.get("duration") or 0)
+    minutes, seconds = divmod(raw_duration, 60)
     duration_str = f"{minutes}:{seconds:02d}"
 
     caption = (
@@ -194,7 +195,7 @@ async def music_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 audio=audio_file,
                 title=song["title"],
                 performer=song["artist"],
-                duration=song["duration"],
+                duration=raw_duration,
                 caption=f"🎧 <b>{title}</b>",
                 parse_mode="HTML",
                 read_timeout=120,
