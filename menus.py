@@ -58,6 +58,7 @@ GROUP_PUBLIC_COMMANDS = [
     BotCommand("topinviters", "See who's brought in the most people"),
     BotCommand("stats", "See your stats (reply to see someone else's)"),
     BotCommand("topchatters", "See the most active members"),
+    BotCommand("music", "Request a song (info + 30s preview)"),
 ]
 
 GROUP_ADMIN_COMMANDS = [
