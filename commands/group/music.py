@@ -4,7 +4,7 @@ ONE command: /music
 
     /music <song or "artist - song">
         Replies with the album art as a banner, the song info, and a button
-        that opens the full song on Spotify. "Not this one? Next" cycles
+        that opens the song in Spotify. "Not this one? Next" cycles
         through the other matches (wrong version? cover?).
 
     Admins and creators only (always allowed to request too):
@@ -17,8 +17,8 @@ ONE command: /music
     /music disallow  (reply to a member, or add their numeric ID)
     /music users     list the members who are allowed
 
-Data comes from the Spotify Web API (search only, client-credentials flow).
-Needs SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in secrets.env.
+Song data comes from Deezer's free public API (no key, no account). The
+button opens a Spotify search for the song.
 
 Handler group used: 9 (the "Next result" button).
 """
@@ -30,6 +30,7 @@ import logging
 import os
 import time
 from io import BytesIO
+from urllib.parse import quote
 
 import requests
 from telegram import (
@@ -50,8 +51,8 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))  # .../bot_src/commands/g
 _PERSISTENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(_THIS_DIR)))
 SETTINGS_FILE = os.path.join(_PERSISTENT_DIR, "music_settings.json")
 
-TOKEN_URL = "https://accounts.spotify.com/api/token"
-SEARCH_URL = "https://api.spotify.com/v1/search"
+SEARCH_URL = "https://api.deezer.com/search"
+ALBUM_URL = "https://api.deezer.com/album"
 RESULT_LIMIT = 5
 COOLDOWN_SECONDS = 20       # per member, admins/creators are exempt
 STATE_CAP = 200             # remembered "Next result" sessions
@@ -60,7 +61,6 @@ MODES = ("everyone", "selected", "off")
 ADMIN_SUBS = ("allow", "disallow", "access", "users")
 
 _last_request: dict = {}
-_token = {"value": "", "expires": 0.0}
 
 
 # ---------- storage ----------
@@ -107,75 +107,60 @@ def _check_access(chat_id: int, user_id: int):
     return False, "You're not allowed to request music here. Ask an admin to allow you."
 
 
-# ---------- Spotify ----------
-def _get_token():
-    """Cached client-credentials token. None if the keys aren't set."""
-    cid = os.environ.get("SPOTIFY_CLIENT_ID")
-    secret = os.environ.get("SPOTIFY_CLIENT_SECRET")
-    if not cid or not secret:
-        return None
-    if _token["value"] and time.time() < _token["expires"] - 60:
-        return _token["value"]
-    r = requests.post(
-        TOKEN_URL,
-        data={"grant_type": "client_credentials"},
-        auth=(cid, secret),
-        timeout=10,
-    )
-    r.raise_for_status()
-    d = r.json()
-    _token["value"] = d["access_token"]
-    _token["expires"] = time.time() + d.get("expires_in", 3600)
-    return _token["value"]
-
-
+# ---------- Deezer ----------
 def _parse(item: dict) -> dict | None:
-    if not item or not item.get("name"):
-        return None
-    artists = ", ".join(a["name"] for a in item.get("artists", []) if a.get("name"))
-    if not artists:
+    artist = (item.get("artist") or {}).get("name") if item else None
+    if not item or not item.get("title") or not artist:
         return None
     album = item.get("album") or {}
-    images = album.get("images") or []  # Spotify lists the largest first
-    secs = (item.get("duration_ms") or 0) // 1000
+    secs = item.get("duration") or 0
+    title = item["title"]
     return {
-        "title": item["name"],
-        "artist": artists,
-        "album": album.get("name", ""),
-        "year": (album.get("release_date") or "")[:4],
+        "title": title,
+        "artist": artist,
+        "album": album.get("title", ""),
+        "album_id": album.get("id"),
+        "year": "",
+        "genre": "",
         "length": f"{secs // 60}:{secs % 60:02d}" if secs else "",
-        "explicit": bool(item.get("explicit")),
-        "art": images[0]["url"] if images else "",
-        "link": (item.get("external_urls") or {}).get("spotify", ""),
+        "explicit": bool(item.get("explicit_lyrics")),
+        "art": album.get("cover_xl") or album.get("cover_big") or album.get("cover") or "",
+        "link": "https://open.spotify.com/search/" + quote(f"{title} {artist}"),
+        "enriched": False,
     }
 
 
 def _search_all(query: str):
-    """Returns (results, error). error is None, 'nocreds' or 'unavailable'."""
+    """Returns (results, error). error is None or 'unavailable'."""
     try:
-        token = _get_token()
-    except Exception as e:
-        logger.warning(f"Spotify token request failed: {e}")
-        return [], "unavailable"
-    if not token:
-        return [], "nocreds"
-    try:
-        r = requests.get(
-            SEARCH_URL,
-            params={"q": query, "type": "track", "limit": RESULT_LIMIT},
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
-        if r.status_code == 401:
-            _token["value"] = ""  # expired early - next request fetches a new one
-        if r.status_code >= 400:
-            logger.warning(f"Spotify {r.status_code}: {r.text[:300]}")
+        r = requests.get(SEARCH_URL, params={"q": query, "limit": RESULT_LIMIT}, timeout=10)
         r.raise_for_status()
-        items = r.json().get("tracks", {}).get("items", [])
-        return [p for p in map(_parse, items) if p], None
+        body = r.json()
+        if "error" in body:  # Deezer reports some errors with a 200 status
+            logger.warning(f"Deezer error: {body['error']}")
+            return [], "unavailable"
+        return [p for p in map(_parse, body.get("data", [])) if p], None
     except Exception as e:
-        logger.warning(f"Spotify search failed: {e}")
+        logger.warning(f"Deezer search failed: {e}")
         return [], "unavailable"
+
+
+def _enrich(t: dict) -> None:
+    """Adds release year and genre (one extra lookup, done once per result)."""
+    if t["enriched"]:
+        return
+    t["enriched"] = True
+    if not t.get("album_id"):
+        return
+    try:
+        r = requests.get(f"{ALBUM_URL}/{t['album_id']}", timeout=10)
+        r.raise_for_status()
+        album = r.json()
+        t["year"] = (album.get("release_date") or "")[:4]
+        genres = (album.get("genres") or {}).get("data") or []
+        t["genre"] = genres[0].get("name", "") if genres else ""
+    except Exception as e:
+        logger.info(f"Could not fetch album details: {e}")
 
 
 def _fetch_bytes(url: str, name: str):
@@ -197,6 +182,8 @@ def _caption(t: dict, idx: int, total: int) -> str:
         lines.append(f"Album: {html.escape(t['album'])}")
     if t["year"]:
         lines.append(f"Released: {t['year']}")
+    if t["genre"]:
+        lines.append(f"Genre: {html.escape(t['genre'])}")
     if t["length"]:
         lines.append(f"Length: {t['length']}")
     if t["explicit"]:
@@ -209,7 +196,7 @@ def _caption(t: dict, idx: int, total: int) -> str:
 def _keyboard(t: dict, total: int):
     row = []
     if t["link"]:
-        row.append(InlineKeyboardButton("Listen on Spotify", url=t["link"]))
+        row.append(InlineKeyboardButton("Open in Spotify", url=t["link"]))
     if total > 1:
         row.append(InlineKeyboardButton("Not this one? Next", callback_data="music:next"))
     return InlineKeyboardMarkup([row]) if row else None
@@ -217,6 +204,7 @@ def _keyboard(t: dict, total: int):
 
 async def _send_track(m, context, results: list[dict], requester_id: int) -> None:
     t = results[0]
+    await asyncio.to_thread(_enrich, t)
     caption, kb = _caption(t, 0, len(results)), _keyboard(t, len(results))
 
     card = None
@@ -280,11 +268,8 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _last_request[(chat.id, user.id)] = time.time()
 
     results, err = await asyncio.to_thread(_search_all, query)
-    if err == "nocreds":
-        await m.reply_text("Music isn't set up yet. The creator needs to add the Spotify keys.")
-        return
     if err:
-        await m.reply_text("Couldn't reach Spotify right now. Try again in a minute.")
+        await m.reply_text("Couldn't reach the music service right now. Try again in a minute.")
         return
     if not results:
         await m.reply_text("Couldn't find that song. Try adding the artist's name.")
@@ -307,6 +292,7 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     total = len(state["results"])
     idx = (state["idx"] + 1) % total
     t = state["results"][idx]
+    await asyncio.to_thread(_enrich, t)
     caption, kb = _caption(t, idx, total), _keyboard(t, total)
 
     try:
