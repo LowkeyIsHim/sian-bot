@@ -90,12 +90,10 @@ def _main_keyboard() -> InlineKeyboardMarkup:
          InlineKeyboardButton("👑 Admins", callback_data="g:admins")],
         [InlineKeyboardButton("🎭 Fun", callback_data="g:fun"),
          InlineKeyboardButton("🎮 Games", callback_data="g:games")],
-        [InlineKeyboardButton("🔨 Moderation", callback_data="g:mod")],
-        [InlineKeyboardButton("🛡️ Auto-Protection", callback_data="g:protect")],
         [InlineKeyboardButton("📊 Stats", callback_data="g:stats"),
          InlineKeyboardButton("🔨 Moderation", callback_data="g:mod")],
+        [InlineKeyboardButton("🛡️ Auto-Protection", callback_data="g:protect")],
     ])
-
 
 def _back(target: str = "g:main") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton("⟵ Back", callback_data=target)]])
