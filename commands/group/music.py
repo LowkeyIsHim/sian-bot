@@ -23,7 +23,7 @@ TEMP_DIR = "temp_music"
 
 
 def _download_audio_sync(query: str) -> dict | None:
-    """Downloads audio using yt-dlp with mobile client spoofing to bypass YouTube blocks."""
+    """Downloads audio using yt-dlp with iOS/Music client spoofing to bypass YouTube datacenter format blocks."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     cookie_path = None
@@ -32,7 +32,11 @@ def _download_audio_sync(query: str) -> dict | None:
     elif os.path.exists("../cookies.txt"):
         cookie_path = "../cookies.txt"
 
-    base_opts = {
+    search_term = query if query.startswith("http") else f"ytsearch1:{query}"
+
+    # Using ios / android_music clients bypasses datacenter format extraction blocks
+    ydl_opts = {
+        "format": "bestaudio/best",
         "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
@@ -42,60 +46,68 @@ def _download_audio_sync(query: str) -> dict | None:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "default_search": "ytsearch1",
-        # Spoof mobile clients to bypass 'The page needs to be reloaded' datacenter block
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "ios", "mweb"],
+                "player_client": ["ios", "android_music", "mweb"],
+                "player_skip": ["configs", "webpage"],
             }
         },
     }
 
     if cookie_path:
-        base_opts["cookiefile"] = cookie_path
+        ydl_opts["cookiefile"] = cookie_path
 
-    format_strategies = [
-        {"format": "bestaudio/best"},
-        {"format": "ba*/b*"},
-        {"format": "best"},
-    ]
+    # Attempt 1: Standard download with configured options
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(search_term, download=True)
+            if info:
+                entry = info["entries"][0] if "entries" in info and info["entries"] else info
+                if entry:
+                    video_id = entry.get("id")
+                    filepath = os.path.join(TEMP_DIR, f"{video_id}.mp3")
+                    if not os.path.exists(filepath):
+                        matching = glob.glob(os.path.join(TEMP_DIR, f"{video_id}.*"))
+                        filepath = matching[0] if matching else None
 
-    for strategy in format_strategies:
-        ydl_opts = {**base_opts, **strategy}
+                    if filepath and os.path.exists(filepath):
+                        return {
+                            "filepath": filepath,
+                            "title": entry.get("title", "Unknown Track"),
+                            "artist": entry.get("artist") or entry.get("uploader") or "Unknown Artist",
+                            "thumbnail": entry.get("thumbnail"),
+                            "duration": entry.get("duration", 0),
+                            "yt_url": entry.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
+                        }
+    except Exception as e:
+        print(f"[Music] Primary download failed: {e}")
+
+    # Attempt 2: Fallback without cookiefile if cookies are expired or rejected
+    if cookie_path and "cookiefile" in ydl_opts:
+        del ydl_opts["cookiefile"]
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(query, download=True)
-                if not info:
-                    continue
+                info = ydl.extract_info(search_term, download=True)
+                if info:
+                    entry = info["entries"][0] if "entries" in info and info["entries"] else info
+                    if entry:
+                        video_id = entry.get("id")
+                        filepath = os.path.join(TEMP_DIR, f"{video_id}.mp3")
+                        if not os.path.exists(filepath):
+                            matching = glob.glob(os.path.join(TEMP_DIR, f"{video_id}.*"))
+                            filepath = matching[0] if matching else None
 
-                if "entries" in info and len(info["entries"]) > 0:
-                    entry = info["entries"][0]
-                else:
-                    entry = info
-
-                video_id = entry.get("id")
-                title = entry.get("title", "Unknown Track")
-                artist = entry.get("artist") or entry.get("uploader") or "Unknown Artist"
-                thumbnail = entry.get("thumbnail")
-                duration = entry.get("duration", 0)
-
-                filepath = os.path.join(TEMP_DIR, f"{video_id}.mp3")
-                if not os.path.exists(filepath):
-                    matching = glob.glob(os.path.join(TEMP_DIR, f"{video_id}.*"))
-                    filepath = matching[0] if matching else None
-
-                if filepath and os.path.exists(filepath):
-                    return {
-                        "filepath": filepath,
-                        "title": title,
-                        "artist": artist,
-                        "thumbnail": thumbnail,
-                        "duration": duration,
-                        "yt_url": entry.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
-                    }
+                        if filepath and os.path.exists(filepath):
+                            return {
+                                "filepath": filepath,
+                                "title": entry.get("title", "Unknown Track"),
+                                "artist": entry.get("artist") or entry.get("uploader") or "Unknown Artist",
+                                "thumbnail": entry.get("thumbnail"),
+                                "duration": entry.get("duration", 0),
+                                "yt_url": entry.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
+                            }
         except Exception as e:
-            print(f"[Music] Strategy {strategy.get('format')} failed: {e}")
-            continue
+            print(f"[Music] Fallback download failed: {e}")
 
     return None
 
