@@ -23,6 +23,7 @@ TEMP_DIR = "temp_music"
 
 
 def _download_audio_sync(query: str) -> dict | None:
+    """Synchronous yt-dlp download helper with YouTube anti-bot bypass."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     ydl_opts = {
@@ -37,7 +38,19 @@ def _download_audio_sync(query: str) -> dict | None:
         "no_warnings": True,
         "noplaylist": True,
         "default_search": "ytsearch1",
+        # Spoof mobile clients to bypass YouTube datacenter IP blocking
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["ios", "android", "mweb"],
+            }
+        },
     }
+
+    # Automatically load cookies.txt if present (root dir or bot_src level)
+    if os.path.exists("cookies.txt"):
+        ydl_opts["cookiefile"] = "cookies.txt"
+    elif os.path.exists("../cookies.txt"):
+        ydl_opts["cookiefile"] = "../cookies.txt"
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
