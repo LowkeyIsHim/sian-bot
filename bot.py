@@ -112,6 +112,7 @@ COMMAND_MODULES = [
     member_tracker,
     invites,
     stats,
+    music,
     chat,
 ]
 
