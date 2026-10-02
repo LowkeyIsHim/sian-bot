@@ -23,19 +23,17 @@ TEMP_DIR = "temp_music"
 
 
 def _download_audio_sync(query: str) -> dict | None:
-    """Downloads audio using yt-dlp with iOS/Music client spoofing to bypass YouTube datacenter format blocks."""
+    """Downloads audio using yt-dlp with TV embedded spoofing and SoundCloud fallback."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     cookie_path = None
-    if os.path.exists("cookies.txt"):
-        cookie_path = "cookies.txt"
-    elif os.path.exists("../cookies.txt"):
-        cookie_path = "../cookies.txt"
+    for path in ["cookies.txt", "../cookies.txt", os.path.join(os.getcwd(), "cookies.txt")]:
+        if os.path.exists(path):
+            cookie_path = path
+            break
 
-    search_term = query if query.startswith("http") else f"ytsearch1:{query}"
-
-    # Using ios / android_music clients bypasses datacenter format extraction blocks
-    ydl_opts = {
+    # Strategy 1: YouTube with TV Embedded player client (bypasses datacenter bot blocks)
+    yt_opts = {
         "format": "bestaudio/best",
         "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
         "postprocessors": [{
@@ -48,19 +46,19 @@ def _download_audio_sync(query: str) -> dict | None:
         "noplaylist": True,
         "extractor_args": {
             "youtube": {
-                "player_client": ["ios", "android_music", "mweb"],
-                "player_skip": ["configs", "webpage"],
+                "player_client": ["tv_embedded", "ios", "android"],
             }
         },
     }
 
     if cookie_path:
-        ydl_opts["cookiefile"] = cookie_path
+        yt_opts["cookiefile"] = cookie_path
 
-    # Attempt 1: Standard download with configured options
+    search_query = query if query.startswith("http") else f"ytsearch1:{query}"
+
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(search_term, download=True)
+        with yt_dlp.YoutubeDL(yt_opts) as ydl:
+            info = ydl.extract_info(search_query, download=True)
             if info:
                 entry = info["entries"][0] if "entries" in info and info["entries"] else info
                 if entry:
@@ -80,34 +78,46 @@ def _download_audio_sync(query: str) -> dict | None:
                             "yt_url": entry.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
                         }
     except Exception as e:
-        print(f"[Music] Primary download failed: {e}")
+        print(f"[Music] YouTube strategy failed: {e}")
 
-    # Attempt 2: Fallback without cookiefile if cookies are expired or rejected
-    if cookie_path and "cookiefile" in ydl_opts:
-        del ydl_opts["cookiefile"]
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(search_term, download=True)
-                if info:
-                    entry = info["entries"][0] if "entries" in info and info["entries"] else info
-                    if entry:
-                        video_id = entry.get("id")
-                        filepath = os.path.join(TEMP_DIR, f"{video_id}.mp3")
-                        if not os.path.exists(filepath):
-                            matching = glob.glob(os.path.join(TEMP_DIR, f"{video_id}.*"))
-                            filepath = matching[0] if matching else None
+    # Strategy 2: SoundCloud search fallback if YouTube server IP is completely blocked
+    sc_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }],
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+    }
 
-                        if filepath and os.path.exists(filepath):
-                            return {
-                                "filepath": filepath,
-                                "title": entry.get("title", "Unknown Track"),
-                                "artist": entry.get("artist") or entry.get("uploader") or "Unknown Artist",
-                                "thumbnail": entry.get("thumbnail"),
-                                "duration": entry.get("duration", 0),
-                                "yt_url": entry.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
-                            }
-        except Exception as e:
-            print(f"[Music] Fallback download failed: {e}")
+    try:
+        sc_query = f"scsearch1:{query}"
+        with yt_dlp.YoutubeDL(sc_opts) as ydl:
+            info = ydl.extract_info(sc_query, download=True)
+            if info:
+                entry = info["entries"][0] if "entries" in info and info["entries"] else info
+                if entry:
+                    track_id = entry.get("id")
+                    filepath = os.path.join(TEMP_DIR, f"{track_id}.mp3")
+                    if not os.path.exists(filepath):
+                        matching = glob.glob(os.path.join(TEMP_DIR, f"{track_id}.*"))
+                        filepath = matching[0] if matching else None
+
+                    if filepath and os.path.exists(filepath):
+                        return {
+                            "filepath": filepath,
+                            "title": entry.get("title", "Unknown Track"),
+                            "artist": entry.get("uploader") or "Unknown Artist",
+                            "thumbnail": entry.get("thumbnail"),
+                            "duration": entry.get("duration", 0),
+                            "yt_url": entry.get("webpage_url", "https://soundcloud.com"),
+                        }
+    except Exception as e:
+        print(f"[Music] SoundCloud strategy failed: {e}")
 
     return None
 
@@ -156,7 +166,7 @@ async def music_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     keyboard = [
         [
             InlineKeyboardButton("🟢 Spotify", url=spotify_url),
-            InlineKeyboardButton("🔴 YouTube", url=song["yt_url"]),
+            InlineKeyboardButton("🔴 Link", url=song["yt_url"]),
         ],
         [InlineKeyboardButton("🗑 Close", callback_data="mus_close")],
     ]
