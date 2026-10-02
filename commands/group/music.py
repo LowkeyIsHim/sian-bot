@@ -23,12 +23,16 @@ TEMP_DIR = "temp_music"
 
 
 def _download_audio_sync(query: str) -> dict | None:
-    """Synchronous yt-dlp download helper with robust fallback format selection."""
+    """Downloads audio using yt-dlp with automatic format fallback for YouTube Music tracks."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
-    ydl_opts = {
-        # ba*/b* allows fallback to video streams if separate audio stream isn't served
-        "format": "ba*/b*",
+    cookie_path = None
+    if os.path.exists("cookies.txt"):
+        cookie_path = "cookies.txt"
+    elif os.path.exists("../cookies.txt"):
+        cookie_path = "../cookies.txt"
+
+    base_opts = {
         "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
@@ -39,54 +43,56 @@ def _download_audio_sync(query: str) -> dict | None:
         "no_warnings": True,
         "noplaylist": True,
         "default_search": "ytsearch1",
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["mweb", "web", "android"],
-            }
-        },
     }
 
-    if os.path.exists("cookies.txt"):
-        ydl_opts["cookiefile"] = "cookies.txt"
-    elif os.path.exists("../cookies.txt"):
-        ydl_opts["cookiefile"] = "../cookies.txt"
+    if cookie_path:
+        base_opts["cookiefile"] = cookie_path
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=True)
-            if not info:
-                return None
+    # Try standard audio format first; fallback to any available video/audio stream
+    format_strategies = [
+        {"format": "bestaudio/best"},
+        {"format": "ba*/b*"},
+        {"format": "best"},
+    ]
 
-            if "entries" in info and len(info["entries"]) > 0:
-                entry = info["entries"][0]
-            else:
-                entry = info
+    for strategy in format_strategies:
+        ydl_opts = {**base_opts, **strategy}
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(query, download=True)
+                if not info:
+                    continue
 
-            video_id = entry.get("id")
-            title = entry.get("title", "Unknown Track")
-            artist = entry.get("artist") or entry.get("uploader") or "Unknown Artist"
-            thumbnail = entry.get("thumbnail")
-            duration = entry.get("duration", 0)
+                if "entries" in info and len(info["entries"]) > 0:
+                    entry = info["entries"][0]
+                else:
+                    entry = info
 
-            filepath = os.path.join(TEMP_DIR, f"{video_id}.mp3")
-            if not os.path.exists(filepath):
-                matching = glob.glob(os.path.join(TEMP_DIR, f"{video_id}.*"))
-                filepath = matching[0] if matching else None
+                video_id = entry.get("id")
+                title = entry.get("title", "Unknown Track")
+                artist = entry.get("artist") or entry.get("uploader") or "Unknown Artist"
+                thumbnail = entry.get("thumbnail")
+                duration = entry.get("duration", 0)
 
-            if not filepath or not os.path.exists(filepath):
-                return None
+                filepath = os.path.join(TEMP_DIR, f"{video_id}.mp3")
+                if not os.path.exists(filepath):
+                    matching = glob.glob(os.path.join(TEMP_DIR, f"{video_id}.*"))
+                    filepath = matching[0] if matching else None
 
-            return {
-                "filepath": filepath,
-                "title": title,
-                "artist": artist,
-                "thumbnail": thumbnail,
-                "duration": duration,
-                "yt_url": entry.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
-            }
-    except Exception as e:
-        print(f"[Music] Download error: {e}")
-        return None
+                if filepath and os.path.exists(filepath):
+                    return {
+                        "filepath": filepath,
+                        "title": title,
+                        "artist": artist,
+                        "thumbnail": thumbnail,
+                        "duration": duration,
+                        "yt_url": entry.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
+                    }
+        except Exception as e:
+            print(f"[Music] Strategy {strategy.get('format')} failed: {e}")
+            continue
+
+    return None
 
 
 async def music_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
