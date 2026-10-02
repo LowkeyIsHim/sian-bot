@@ -168,6 +168,8 @@ def _search_all(query: str):
         )
         if r.status_code == 401:
             _token["value"] = ""  # expired early - next request fetches a new one
+        if r.status_code >= 400:
+            logger.warning(f"Spotify {r.status_code}: {r.text[:300]}")
         r.raise_for_status()
         items = r.json().get("tracks", {}).get("items", [])
         return [p for p in map(_parse, items) if p], None
