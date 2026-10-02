@@ -23,7 +23,7 @@ TEMP_DIR = "temp_music"
 
 
 def _download_audio_sync(query: str) -> dict | None:
-    """Downloads audio using yt-dlp with automatic format fallback for YouTube Music tracks."""
+    """Downloads audio using yt-dlp with mobile client spoofing to bypass YouTube blocks."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     cookie_path = None
@@ -43,12 +43,17 @@ def _download_audio_sync(query: str) -> dict | None:
         "no_warnings": True,
         "noplaylist": True,
         "default_search": "ytsearch1",
+        # Spoof mobile clients to bypass 'The page needs to be reloaded' datacenter block
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "ios", "mweb"],
+            }
+        },
     }
 
     if cookie_path:
         base_opts["cookiefile"] = cookie_path
 
-    # Try standard audio format first; fallback to any available video/audio stream
     format_strategies = [
         {"format": "bestaudio/best"},
         {"format": "ba*/b*"},
