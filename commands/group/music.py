@@ -269,11 +269,24 @@ def _yt_download(song: dict) -> str | None:
     if cookies:
         opts["cookiefile"] = cookies
 
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([f"https://www.youtube.com/watch?v={song['id']}"])
-    except Exception as e:
-        print(f"[Music] yt download failed: {e}")
+    url = f"https://www.youtube.com/watch?v={song['id']}"
+
+    # YouTube randomly blocks individual clients ("page needs to be reloaded",
+    # "format not available"), so try several until one works.
+    for clients in (None, ["tv"], ["web_safari"], ["mweb"], ["android_vr"]):
+        attempt = dict(opts)
+        if clients:
+            attempt["extractor_args"] = {"youtube": {"player_client": clients}}
+        try:
+            with yt_dlp.YoutubeDL(attempt) as ydl:
+                ydl.download([url])
+            if any(n.startswith(stem + ".") for n in os.listdir(TEMP_DIR)):
+                break
+        except Exception as e:
+            print(f"[Music] yt download failed (clients={clients}): {e}")
+            for n in os.listdir(TEMP_DIR):  # drop partial files before retrying
+                if n.startswith(stem + "."):
+                    _safe_remove(os.path.join(TEMP_DIR, n))
 
     for name in os.listdir(TEMP_DIR):
         if name.startswith(stem + "."):
@@ -520,5 +533,6 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 def register(app: Application) -> None:
     os.makedirs(TEMP_DIR, exist_ok=True)
     _cleanup_stale()
+    print(f"[Music] yt-dlp version: {yt_dlp.version.__version__} | cookies: {bool(_cookie_path())}")
     app.add_handler(CommandHandler("music", music_command))
     app.add_handler(CallbackQueryHandler(music_callback, pattern=r"^mus_(pick|close):"))
