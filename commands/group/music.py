@@ -31,11 +31,10 @@ MUSIC_RESULTS: dict[str, list[dict]] = {}
 
 # Multi-mirror fallback list.
 API_MIRRORS = [
-    "https://jio-saavn-api-sigma.vercel.app/api/search/songs?query=",
-    "https://saavn.me/api/search/songs?query=",
-    "https://saavn.dev/api/search/songs?query=",
+    "https://saavn.dev/search/songs?query=",
+    "https://jiosaavn-api-v3.vercel.app/search?query=",
+    "https://saavn-api.vercel.app/search?query=",
 ]
-
 
 def _search_music_api(query: str) -> list[dict]:
     """
