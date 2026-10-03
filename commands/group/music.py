@@ -23,56 +23,69 @@ from branding import header, DOT_DIVIDER
 
 TEMP_DIR = "temp_music"
 
+# Multi-mirror fallback list to prevent single point of failure (Errno -2)
+API_MIRRORS = [
+    "https://jio-saavn-api-sigma.vercel.app/api/search/songs?query=",
+    "https://saavn.me/api/search/songs?query=",
+    "https://saavn.dev/api/search/songs?query=",
+]
+
 
 def _search_music_api(query: str) -> dict | None:
-    """Primary Strategy: Fetches official 320kbps studio audio from music API (No IP blocks/DRM)."""
-    try:
-        encoded_query = urllib.parse.quote(query)
-        api_url = f"https://saavn.dev/api/search/songs?query={encoded_query}"
-        
-        req = urllib.request.Request(api_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            
-            if data.get("success") and data.get("data", {}).get("results"):
-                song = data["data"]["results"][0]
-                download_urls = song.get("downloadUrl", [])
-                
-                if not download_urls:
-                    return None
+    """Tries multiple API mirrors to fetch 320kbps audio directly."""
+    encoded_query = urllib.parse.quote(query)
 
-                # Select highest quality stream (usually 320kbps)
-                best_audio_url = download_urls[-1]["url"]
-                
-                # Select highest quality album art
-                images = song.get("image", [])
-                best_thumb = images[-1]["url"] if images else None
-                
-                # Download track directly
-                os.makedirs(TEMP_DIR, exist_ok=True)
-                file_path = os.path.join(TEMP_DIR, f"{song.get('id', 'track')}.mp3")
-                
-                dl_req = urllib.request.Request(best_audio_url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(dl_req, timeout=30) as audio_resp, open(file_path, "wb") as out_file:
-                    out_file.write(audio_resp.read())
+    for mirror in API_MIRRORS:
+        try:
+            api_url = f"{mirror}{encoded_query}"
+            req = urllib.request.Request(
+                api_url, 
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
 
-                if os.path.exists(file_path):
-                    return {
-                        "filepath": file_path,
-                        "title": song.get("name", "Unknown Track"),
-                        "artist": song.get("primaryArtists") or "Unknown Artist",
-                        "thumbnail": best_thumb,
-                        "duration": int(song.get("duration") or 0),
-                        "yt_url": f"https://open.spotify.com/search/{encoded_query}",
-                    }
-    except Exception as e:
-        print(f"[Music API] Direct API search failed: {e}")
-        
+                if data.get("success") and data.get("data", {}).get("results"):
+                    song = data["data"]["results"][0]
+                    download_urls = song.get("downloadUrl", [])
+
+                    if not download_urls:
+                        continue
+
+                    # Select highest quality stream (320kbps)
+                    best_audio_url = download_urls[-1]["url"]
+
+                    images = song.get("image", [])
+                    best_thumb = images[-1]["url"] if images else None
+
+                    os.makedirs(TEMP_DIR, exist_ok=True)
+                    file_path = os.path.join(TEMP_DIR, f"{song.get('id', 'track')}.mp3")
+
+                    dl_req = urllib.request.Request(
+                        best_audio_url, 
+                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                    )
+                    with urllib.request.urlopen(dl_req, timeout=30) as audio_resp, open(file_path, "wb") as out_file:
+                        out_file.write(audio_resp.read())
+
+                    if os.path.exists(file_path):
+                        return {
+                            "filepath": file_path,
+                            "title": song.get("name", "Unknown Track"),
+                            "artist": song.get("primaryArtists") or "Unknown Artist",
+                            "thumbnail": best_thumb,
+                            "duration": int(song.get("duration") or 0),
+                            "yt_url": f"https://open.spotify.com/search/{encoded_query}",
+                        }
+        except Exception as e:
+            print(f"[Music API] Mirror {mirror} failed: {e}")
+            continue
+
     return None
 
 
 def _download_ytdlp_fallback(query: str) -> dict | None:
-    """Secondary Fallback: Uses yt-dlp if track is not available on the music API."""
+    """Secondary Fallback with embedded client fix to bypass YouTube reload errors."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     cookie_path = None
@@ -82,7 +95,7 @@ def _download_ytdlp_fallback(query: str) -> dict | None:
             break
 
     yt_opts = {
-        "format": "bestaudio/best",
+        "format": "ba/b",
         "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
@@ -92,6 +105,11 @@ def _download_ytdlp_fallback(query: str) -> dict | None:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web_embedded", "android"],
+            }
+        },
     }
 
     if cookie_path:
@@ -127,7 +145,6 @@ def _download_ytdlp_fallback(query: str) -> dict | None:
 
 
 def _get_audio_sync(query: str) -> dict | None:
-    """Tries API first, then falls back to yt-dlp."""
     song = _search_music_api(query)
     if song:
         return song
