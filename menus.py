@@ -59,6 +59,7 @@ GROUP_PUBLIC_COMMANDS = [
     BotCommand("stats", "See your stats (reply to see someone else's)"),
     BotCommand("topchatters", "See the most active members"),
     BotCommand("music", "Find a song and play it right here in the chat"),
+    BotCommand("football", "Today's big matches and live scores"),
 ]
 
 # Music admin controls (access mode, allow / disallow, library) live inside
