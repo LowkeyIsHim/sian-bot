@@ -28,7 +28,7 @@ TEMP_DIR = "temp_music"
 MUSIC_RESULTS: dict[str, list[dict]] = {}
 MAX_CACHE_SIZE = 100
 
-# Verified API mirror routes with correct path structures
+# Verified API mirror routes
 API_MIRRORS = [
     "https://jio-saavn-api-sigma.vercel.app/api/search/songs?query=",
     "https://saavn.me/api/search/songs?query=",
@@ -84,7 +84,6 @@ def _search_music_api(query: str) -> list[dict]:
                 return songs
 
         except Exception:
-            # Silently skip offline or rate-limited API mirrors
             continue
 
     return []
@@ -133,7 +132,7 @@ def _download_selected_song(song: dict) -> dict | None:
 
 
 def _download_ytdlp_fallback(query: str) -> dict | None:
-    """Fallback extractor if API mirrors are unreachable."""
+    """Fallback extractor if API mirrors fail or are unreachable."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     cookie_path = None
@@ -143,7 +142,7 @@ def _download_ytdlp_fallback(query: str) -> dict | None:
             break
 
     yt_opts = {
-        "format": "ba/b",
+        "format": "bestaudio/best",
         "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
@@ -153,9 +152,10 @@ def _download_ytdlp_fallback(query: str) -> dict | None:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        "nocheckcertificate": True,
         "extractor_args": {
             "youtube": {
-                "player_client": ["web_embedded", "android"],
+                "player_client": ["android", "ios", "mweb"],
             }
         },
     }
@@ -211,7 +211,7 @@ async def music_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     results = await asyncio.to_thread(_search_music_api, query)
 
-    # Fallback to direct extraction if API search returns nothing
+    # Fallback to yt-dlp if API search returns nothing
     if not results:
         await status_msg.edit_text("⏳ <i>Fetching track directly...</i>", parse_mode="HTML")
         fallback_song = await asyncio.to_thread(_download_ytdlp_fallback, query)
