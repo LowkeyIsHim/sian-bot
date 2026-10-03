@@ -23,7 +23,7 @@ TEMP_DIR = "temp_music"
 
 
 def _download_audio_sync(query: str) -> dict | None:
-    """Downloads audio using yt-dlp with TV embedded spoofing and SoundCloud fallback."""
+    """Downloads audio using yt-dlp with TV embedded spoofing and official audio search preference."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     cookie_path = None
@@ -31,6 +31,14 @@ def _download_audio_sync(query: str) -> dict | None:
         if os.path.exists(path):
             cookie_path = path
             break
+
+    # Build targeted search query to skip fan edits / pitched versions
+    if query.startswith("http"):
+        search_query = query
+        sc_query = query
+    else:
+        search_query = f"ytsearch1:{query} official audio"
+        sc_query = f"scsearch1:{query} official"
 
     yt_opts = {
         "format": "bestaudio/best",
@@ -43,9 +51,10 @@ def _download_audio_sync(query: str) -> dict | None:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        "format_sort": ["acodec:mp3", "m4a", "ext"],
         "extractor_args": {
             "youtube": {
-                "player_client": ["tv_embedded", "ios", "android"],
+                "player_client": ["android", "ios", "web"],
             }
         },
     }
@@ -53,9 +62,7 @@ def _download_audio_sync(query: str) -> dict | None:
     if cookie_path:
         yt_opts["cookiefile"] = cookie_path
 
-    search_query = query if query.startswith("http") else f"ytsearch1:{query}"
-
-    # Strategy 1: YouTube
+    # Strategy 1: YouTube (Official Audio)
     try:
         with yt_dlp.YoutubeDL(yt_opts) as ydl:
             info = ydl.extract_info(search_query, download=True)
@@ -95,7 +102,6 @@ def _download_audio_sync(query: str) -> dict | None:
     }
 
     try:
-        sc_query = f"scsearch1:{query}"
         with yt_dlp.YoutubeDL(sc_opts) as ydl:
             info = ydl.extract_info(sc_query, download=True)
             if info:
