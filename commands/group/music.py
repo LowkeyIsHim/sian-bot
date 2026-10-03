@@ -20,6 +20,7 @@ import asyncio
 import html
 import os
 import secrets
+import shutil
 import time
 import urllib.parse
 
@@ -263,6 +264,8 @@ def _yt_download(song: dict) -> str | None:
         "max_filesize": MAX_BYTES,
         "socket_timeout": 20,
         "retries": 3,
+        # newer yt-dlp needs a JS runtime to solve YouTube challenges
+        "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
         "match_filter": yt_dlp.utils.match_filter_func(f"duration < {MAX_YT_SECONDS}"),
     }
     cookies = _cookie_path()
@@ -533,6 +536,10 @@ async def music_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 def register(app: Application) -> None:
     os.makedirs(TEMP_DIR, exist_ok=True)
     _cleanup_stale()
-    print(f"[Music] yt-dlp version: {yt_dlp.version.__version__} | cookies: {bool(_cookie_path())}")
+    runtimes = [r for r in ("deno", "node", "bun") if shutil.which(r)]
+    print(
+        f"[Music] yt-dlp {yt_dlp.version.__version__} | "
+        f"cookies: {bool(_cookie_path())} | js runtimes: {runtimes or 'NONE'}"
+    )
     app.add_handler(CommandHandler("music", music_command))
     app.add_handler(CallbackQueryHandler(music_callback, pattern=r"^mus_(pick|close):"))
