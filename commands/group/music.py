@@ -1,8 +1,10 @@
 import asyncio
 import glob
 import html
+import json
 import os
 import urllib.parse
+import urllib.request
 import yt_dlp
 
 from telegram import (
@@ -21,18 +23,56 @@ from branding import header, DOT_DIVIDER
 
 TEMP_DIR = "temp_music"
 
-# Keywords used by fan uploaders for pitched/altered tracks on SoundCloud
-BAD_KEYWORDS = ["sped up", "slowed", "reverb", "pitch", "nightcore", "edit", "8d", "boosted"]
+
+def _search_music_api(query: str) -> dict | None:
+    """Primary Strategy: Fetches official 320kbps studio audio from music API (No IP blocks/DRM)."""
+    try:
+        encoded_query = urllib.parse.quote(query)
+        api_url = f"https://saavn.dev/api/search/songs?query={encoded_query}"
+        
+        req = urllib.request.Request(api_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            
+            if data.get("success") and data.get("data", {}).get("results"):
+                song = data["data"]["results"][0]
+                download_urls = song.get("downloadUrl", [])
+                
+                if not download_urls:
+                    return None
+
+                # Select highest quality stream (usually 320kbps)
+                best_audio_url = download_urls[-1]["url"]
+                
+                # Select highest quality album art
+                images = song.get("image", [])
+                best_thumb = images[-1]["url"] if images else None
+                
+                # Download track directly
+                os.makedirs(TEMP_DIR, exist_ok=True)
+                file_path = os.path.join(TEMP_DIR, f"{song.get('id', 'track')}.mp3")
+                
+                dl_req = urllib.request.Request(best_audio_url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(dl_req, timeout=30) as audio_resp, open(file_path, "wb") as out_file:
+                    out_file.write(audio_resp.read())
+
+                if os.path.exists(file_path):
+                    return {
+                        "filepath": file_path,
+                        "title": song.get("name", "Unknown Track"),
+                        "artist": song.get("primaryArtists") or "Unknown Artist",
+                        "thumbnail": best_thumb,
+                        "duration": int(song.get("duration") or 0),
+                        "yt_url": f"https://open.spotify.com/search/{encoded_query}",
+                    }
+    except Exception as e:
+        print(f"[Music API] Direct API search failed: {e}")
+        
+    return None
 
 
-def _is_clean_track(title: str) -> bool:
-    """Checks if a track title contains unwanted edit indicators."""
-    title_lower = title.lower()
-    return not any(kw in title_lower for kw in BAD_KEYWORDS)
-
-
-def _download_audio_sync(query: str) -> dict | None:
-    """Downloads audio using yt-dlp with resilient formatting and DRM-bypassing fallback."""
+def _download_ytdlp_fallback(query: str) -> dict | None:
+    """Secondary Fallback: Uses yt-dlp if track is not available on the music API."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     cookie_path = None
@@ -41,9 +81,8 @@ def _download_audio_sync(query: str) -> dict | None:
             cookie_path = path
             break
 
-    # Strategy 1: YouTube Search (Using ba/b to avoid format unavailability)
     yt_opts = {
-        "format": "ba/b",
+        "format": "bestaudio/best",
         "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
@@ -53,95 +92,46 @@ def _download_audio_sync(query: str) -> dict | None:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "web"],
-            }
-        },
     }
 
     if cookie_path:
         yt_opts["cookiefile"] = cookie_path
 
-    # Removed ytmusicsearch1 as it is unsupported by yt-dlp
-    search_queries = [
-        query if query.startswith("http") else f"ytsearch1:{query} audio",
-        query if query.startswith("http") else f"ytsearch1:{query} lyrics",
-    ]
-
-    for search_q in search_queries:
-        try:
-            with yt_dlp.YoutubeDL(yt_opts) as ydl:
-                info = ydl.extract_info(search_q, download=True)
-                if info:
-                    entry = info["entries"][0] if "entries" in info and info["entries"] else info
-                    if entry:
-                        video_id = entry.get("id")
-                        filepath = os.path.join(TEMP_DIR, f"{video_id}.mp3")
-                        if not os.path.exists(filepath):
-                            matching = glob.glob(os.path.join(TEMP_DIR, f"{video_id}.*"))
-                            filepath = matching[0] if matching else None
-
-                        if filepath and os.path.exists(filepath):
-                            return {
-                                "filepath": filepath,
-                                "title": entry.get("title", "Unknown Track"),
-                                "artist": entry.get("artist") or entry.get("uploader") or "Unknown Artist",
-                                "thumbnail": entry.get("thumbnail"),
-                                "duration": int(entry.get("duration") or 0),
-                                "yt_url": entry.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
-                            }
-        except Exception as e:
-            print(f"[Music] YouTube query '{search_q}' failed: {e}")
-
-    # Strategy 2: SoundCloud Fallback with DRM skip loop
-    sc_opts = {
-        "format": "ba/b",
-        "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "192",
-        }],
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-    }
+    search_query = query if query.startswith("http") else f"ytsearch1:{query}"
 
     try:
-        sc_query = query if query.startswith("http") else f"scsearch5:{query}"
-        with yt_dlp.YoutubeDL(sc_opts) as ydl:
-            info = ydl.extract_info(sc_query, download=False)
-            if info and "entries" in info:
-                # Loop through results to skip DRM-protected and pitched tracks
-                for entry in info["entries"]:
-                    if not entry or not _is_clean_track(entry.get("title", "")):
-                        continue
-                    
-                    try:
-                        dl_info = ydl.extract_info(entry["webpage_url"], download=True)
-                        track_id = dl_info.get("id")
-                        filepath = os.path.join(TEMP_DIR, f"{track_id}.mp3")
-                        if not os.path.exists(filepath):
-                            matching = glob.glob(os.path.join(TEMP_DIR, f"{track_id}.*"))
-                            filepath = matching[0] if matching else None
+        with yt_dlp.YoutubeDL(yt_opts) as ydl:
+            info = ydl.extract_info(search_query, download=True)
+            if info:
+                entry = info["entries"][0] if "entries" in info and info["entries"] else info
+                if entry:
+                    video_id = entry.get("id")
+                    filepath = os.path.join(TEMP_DIR, f"{video_id}.mp3")
+                    if not os.path.exists(filepath):
+                        matching = glob.glob(os.path.join(TEMP_DIR, f"{video_id}.*"))
+                        filepath = matching[0] if matching else None
 
-                        if filepath and os.path.exists(filepath):
-                            return {
-                                "filepath": filepath,
-                                "title": dl_info.get("title", "Unknown Track"),
-                                "artist": dl_info.get("uploader") or "Unknown Artist",
-                                "thumbnail": dl_info.get("thumbnail"),
-                                "duration": int(dl_info.get("duration") or 0),
-                                "yt_url": dl_info.get("webpage_url", "https://soundcloud.com"),
-                            }
-                    except Exception as e:
-                        print(f"[Music] Skipping SoundCloud track (likely DRM protected): {e}")
-                        continue
+                    if filepath and os.path.exists(filepath):
+                        return {
+                            "filepath": filepath,
+                            "title": entry.get("title", "Unknown Track"),
+                            "artist": entry.get("artist") or entry.get("uploader") or "Unknown Artist",
+                            "thumbnail": entry.get("thumbnail"),
+                            "duration": int(entry.get("duration") or 0),
+                            "yt_url": entry.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
+                        }
     except Exception as e:
-        print(f"[Music] SoundCloud search failed: {e}")
+        print(f"[Music] yt-dlp fallback failed: {e}")
 
     return None
+
+
+def _get_audio_sync(query: str) -> dict | None:
+    """Tries API first, then falls back to yt-dlp."""
+    song = _search_music_api(query)
+    if song:
+        return song
+    return _download_ytdlp_fallback(query)
 
 
 async def music_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -158,12 +148,12 @@ async def music_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         return
 
-    status_msg = await update.message.reply_text("<i>🎶 Downloading full track, please wait...</i>", parse_mode="HTML")
+    status_msg = await update.message.reply_text("<i>🎶 Fetching studio audio, please wait...</i>", parse_mode="HTML")
 
-    song = await asyncio.to_thread(_download_audio_sync, query)
+    song = await asyncio.to_thread(_get_audio_sync, query)
 
     if not song:
-        await status_msg.edit_text("❌ <i>Failed to retrieve audio. It may be DRM protected. Try another song.</i>", parse_mode="HTML")
+        await status_msg.edit_text("❌ <i>Failed to retrieve audio. Please try another search term.</i>", parse_mode="HTML")
         return
 
     await status_msg.delete()
@@ -179,7 +169,7 @@ async def music_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         f"{header('GODDESS MUSIC')}\n\n"
         f"<b>🎵 {title}</b>\n"
         f"👤 <b>Artist:</b> {artist}\n"
-        f"⏱ <b>Duration:</b> {duration_str} {DOT_DIVIDER} <b>Quality:</b> 192 kbps\n\n"
+        f"⏱ <b>Duration:</b> {duration_str} {DOT_DIVIDER} <b>Quality:</b> 320 kbps\n\n"
         f"<i>Full track attached below.</i>"
     )
 
@@ -189,7 +179,7 @@ async def music_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     keyboard = [
         [
             InlineKeyboardButton("🟢 Spotify", url=spotify_url),
-            InlineKeyboardButton("🔴 Link", url=song["yt_url"]),
+            InlineKeyboardButton("🔗 Track Link", url=song["yt_url"]),
         ],
         [InlineKeyboardButton("🗑 Close", callback_data="mus_close")],
     ]
