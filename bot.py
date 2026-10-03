@@ -53,6 +53,7 @@ from commands.group import (
     member_tracker,
     moderation,
     music,
+    music_menu,
     news,
     promote_commands,
     purge,
@@ -114,6 +115,7 @@ COMMAND_MODULES = [
     invites,
     stats,
     music,
+    music_menu,
     chat,
 ]
 
