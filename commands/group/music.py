@@ -21,9 +21,18 @@ from branding import header, DOT_DIVIDER
 
 TEMP_DIR = "temp_music"
 
+# Keywords used by fan uploaders for pitched/altered tracks on SoundCloud
+BAD_KEYWORDS = ["sped up", "slowed", "reverb", "pitch", "nightcore", "edit", "8d", "boosted"]
+
+
+def _is_clean_track(title: str) -> bool:
+    """Checks if a track title contains unwanted edit indicators."""
+    title_lower = title.lower()
+    return not any(kw in title_lower for kw in BAD_KEYWORDS)
+
 
 def _download_audio_sync(query: str) -> dict | None:
-    """Downloads audio using yt-dlp with TV embedded spoofing and official audio search preference."""
+    """Downloads audio using yt-dlp with YouTube Music priority and clean SoundCloud fallback."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     cookie_path = None
@@ -32,14 +41,7 @@ def _download_audio_sync(query: str) -> dict | None:
             cookie_path = path
             break
 
-    # Build targeted search query to skip fan edits / pitched versions
-    if query.startswith("http"):
-        search_query = query
-        sc_query = query
-    else:
-        search_query = f"ytsearch1:{query} official audio"
-        sc_query = f"scsearch1:{query} official"
-
+    # Strategy 1: YouTube Music Search (Guarantees Official Audio)
     yt_opts = {
         "format": "bestaudio/best",
         "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
@@ -51,10 +53,9 @@ def _download_audio_sync(query: str) -> dict | None:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "format_sort": ["acodec:mp3", "m4a", "ext"],
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "ios", "web"],
+                "player_client": ["mweb", "ios", "android"],
             }
         },
     }
@@ -62,32 +63,37 @@ def _download_audio_sync(query: str) -> dict | None:
     if cookie_path:
         yt_opts["cookiefile"] = cookie_path
 
-    # Strategy 1: YouTube (Official Audio)
-    try:
-        with yt_dlp.YoutubeDL(yt_opts) as ydl:
-            info = ydl.extract_info(search_query, download=True)
-            if info:
-                entry = info["entries"][0] if "entries" in info and info["entries"] else info
-                if entry:
-                    video_id = entry.get("id")
-                    filepath = os.path.join(TEMP_DIR, f"{video_id}.mp3")
-                    if not os.path.exists(filepath):
-                        matching = glob.glob(os.path.join(TEMP_DIR, f"{video_id}.*"))
-                        filepath = matching[0] if matching else None
+    search_queries = [
+        query if query.startswith("http") else f"ytmusicsearch1:{query}",
+        query if query.startswith("http") else f"ytsearch1:{query} official audio",
+    ]
 
-                    if filepath and os.path.exists(filepath):
-                        return {
-                            "filepath": filepath,
-                            "title": entry.get("title", "Unknown Track"),
-                            "artist": entry.get("artist") or entry.get("uploader") or "Unknown Artist",
-                            "thumbnail": entry.get("thumbnail"),
-                            "duration": int(entry.get("duration") or 0),
-                            "yt_url": entry.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
-                        }
-    except Exception as e:
-        print(f"[Music] YouTube strategy failed: {e}")
+    for search_q in search_queries:
+        try:
+            with yt_dlp.YoutubeDL(yt_opts) as ydl:
+                info = ydl.extract_info(search_q, download=True)
+                if info:
+                    entry = info["entries"][0] if "entries" in info and info["entries"] else info
+                    if entry:
+                        video_id = entry.get("id")
+                        filepath = os.path.join(TEMP_DIR, f"{video_id}.mp3")
+                        if not os.path.exists(filepath):
+                            matching = glob.glob(os.path.join(TEMP_DIR, f"{video_id}.*"))
+                            filepath = matching[0] if matching else None
 
-    # Strategy 2: SoundCloud Fallback
+                        if filepath and os.path.exists(filepath):
+                            return {
+                                "filepath": filepath,
+                                "title": entry.get("title", "Unknown Track"),
+                                "artist": entry.get("artist") or entry.get("uploader") or "Unknown Artist",
+                                "thumbnail": entry.get("thumbnail"),
+                                "duration": int(entry.get("duration") or 0),
+                                "yt_url": entry.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
+                            }
+        except Exception as e:
+            print(f"[Music] YouTube query '{search_q}' failed: {e}")
+
+    # Strategy 2: SoundCloud Fallback (Filters out pitched/edited tracks)
     sc_opts = {
         "format": "bestaudio/best",
         "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
@@ -102,12 +108,23 @@ def _download_audio_sync(query: str) -> dict | None:
     }
 
     try:
+        sc_query = query if query.startswith("http") else f"scsearch5:{query}"
         with yt_dlp.YoutubeDL(sc_opts) as ydl:
-            info = ydl.extract_info(sc_query, download=True)
-            if info:
-                entry = info["entries"][0] if "entries" in info and info["entries"] else info
-                if entry:
-                    track_id = entry.get("id")
+            info = ydl.extract_info(sc_query, download=False)
+            if info and "entries" in info:
+                # Pick the first result that isn't a fan edit/sped-up track
+                selected_entry = None
+                for entry in info["entries"]:
+                    if entry and _is_clean_track(entry.get("title", "")):
+                        selected_entry = entry
+                        break
+
+                if not selected_entry and info["entries"]:
+                    selected_entry = info["entries"][0]
+
+                if selected_entry:
+                    dl_info = ydl.extract_info(selected_entry["webpage_url"], download=True)
+                    track_id = dl_info.get("id")
                     filepath = os.path.join(TEMP_DIR, f"{track_id}.mp3")
                     if not os.path.exists(filepath):
                         matching = glob.glob(os.path.join(TEMP_DIR, f"{track_id}.*"))
@@ -116,11 +133,11 @@ def _download_audio_sync(query: str) -> dict | None:
                     if filepath and os.path.exists(filepath):
                         return {
                             "filepath": filepath,
-                            "title": entry.get("title", "Unknown Track"),
-                            "artist": entry.get("uploader") or "Unknown Artist",
-                            "thumbnail": entry.get("thumbnail"),
-                            "duration": int(entry.get("duration") or 0),
-                            "yt_url": entry.get("webpage_url", "https://soundcloud.com"),
+                            "title": dl_info.get("title", "Unknown Track"),
+                            "artist": dl_info.get("uploader") or "Unknown Artist",
+                            "thumbnail": dl_info.get("thumbnail"),
+                            "duration": int(dl_info.get("duration") or 0),
+                            "yt_url": dl_info.get("webpage_url", "https://soundcloud.com"),
                         }
     except Exception as e:
         print(f"[Music] SoundCloud strategy failed: {e}")
