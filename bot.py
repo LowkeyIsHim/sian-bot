@@ -44,6 +44,7 @@ from commands.group import (
     admin_sync,
     confess,
     flood_guard,
+    football,
     group_menu,
     invites,
     link_guard,
@@ -116,6 +117,7 @@ COMMAND_MODULES = [
     stats,
     music,
     music_menu,
+    football,
     chat,
 ]
 
@@ -142,6 +144,7 @@ async def _post_init(app: Application) -> None:
         await refresh_private_menu(app.bot, creator_id)
 
     asyncio.create_task(news.start_background_loop(app.bot))
+    asyncio.create_task(football.start_background_loop(app.bot))
 
 
 async def _error_handler(update, context) -> None:
