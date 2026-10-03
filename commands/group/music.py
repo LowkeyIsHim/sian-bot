@@ -32,7 +32,7 @@ def _is_clean_track(title: str) -> bool:
 
 
 def _download_audio_sync(query: str) -> dict | None:
-    """Downloads audio using yt-dlp with YouTube Music priority and clean SoundCloud fallback."""
+    """Downloads audio using yt-dlp with resilient formatting and DRM-bypassing fallback."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     cookie_path = None
@@ -41,9 +41,9 @@ def _download_audio_sync(query: str) -> dict | None:
             cookie_path = path
             break
 
-    # Strategy 1: YouTube Music Search (Guarantees Official Audio)
+    # Strategy 1: YouTube Search (Using ba/b to avoid format unavailability)
     yt_opts = {
-        "format": "bestaudio/best",
+        "format": "ba/b",
         "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
@@ -55,7 +55,7 @@ def _download_audio_sync(query: str) -> dict | None:
         "noplaylist": True,
         "extractor_args": {
             "youtube": {
-                "player_client": ["mweb", "ios", "android"],
+                "player_client": ["android", "web"],
             }
         },
     }
@@ -63,9 +63,10 @@ def _download_audio_sync(query: str) -> dict | None:
     if cookie_path:
         yt_opts["cookiefile"] = cookie_path
 
+    # Removed ytmusicsearch1 as it is unsupported by yt-dlp
     search_queries = [
-        query if query.startswith("http") else f"ytmusicsearch1:{query}",
-        query if query.startswith("http") else f"ytsearch1:{query} official audio",
+        query if query.startswith("http") else f"ytsearch1:{query} audio",
+        query if query.startswith("http") else f"ytsearch1:{query} lyrics",
     ]
 
     for search_q in search_queries:
@@ -93,9 +94,9 @@ def _download_audio_sync(query: str) -> dict | None:
         except Exception as e:
             print(f"[Music] YouTube query '{search_q}' failed: {e}")
 
-    # Strategy 2: SoundCloud Fallback (Filters out pitched/edited tracks)
+    # Strategy 2: SoundCloud Fallback with DRM skip loop
     sc_opts = {
-        "format": "bestaudio/best",
+        "format": "ba/b",
         "outtmpl": f"{TEMP_DIR}/%(id)s.%(ext)s",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
@@ -112,35 +113,33 @@ def _download_audio_sync(query: str) -> dict | None:
         with yt_dlp.YoutubeDL(sc_opts) as ydl:
             info = ydl.extract_info(sc_query, download=False)
             if info and "entries" in info:
-                # Pick the first result that isn't a fan edit/sped-up track
-                selected_entry = None
+                # Loop through results to skip DRM-protected and pitched tracks
                 for entry in info["entries"]:
-                    if entry and _is_clean_track(entry.get("title", "")):
-                        selected_entry = entry
-                        break
+                    if not entry or not _is_clean_track(entry.get("title", "")):
+                        continue
+                    
+                    try:
+                        dl_info = ydl.extract_info(entry["webpage_url"], download=True)
+                        track_id = dl_info.get("id")
+                        filepath = os.path.join(TEMP_DIR, f"{track_id}.mp3")
+                        if not os.path.exists(filepath):
+                            matching = glob.glob(os.path.join(TEMP_DIR, f"{track_id}.*"))
+                            filepath = matching[0] if matching else None
 
-                if not selected_entry and info["entries"]:
-                    selected_entry = info["entries"][0]
-
-                if selected_entry:
-                    dl_info = ydl.extract_info(selected_entry["webpage_url"], download=True)
-                    track_id = dl_info.get("id")
-                    filepath = os.path.join(TEMP_DIR, f"{track_id}.mp3")
-                    if not os.path.exists(filepath):
-                        matching = glob.glob(os.path.join(TEMP_DIR, f"{track_id}.*"))
-                        filepath = matching[0] if matching else None
-
-                    if filepath and os.path.exists(filepath):
-                        return {
-                            "filepath": filepath,
-                            "title": dl_info.get("title", "Unknown Track"),
-                            "artist": dl_info.get("uploader") or "Unknown Artist",
-                            "thumbnail": dl_info.get("thumbnail"),
-                            "duration": int(dl_info.get("duration") or 0),
-                            "yt_url": dl_info.get("webpage_url", "https://soundcloud.com"),
-                        }
+                        if filepath and os.path.exists(filepath):
+                            return {
+                                "filepath": filepath,
+                                "title": dl_info.get("title", "Unknown Track"),
+                                "artist": dl_info.get("uploader") or "Unknown Artist",
+                                "thumbnail": dl_info.get("thumbnail"),
+                                "duration": int(dl_info.get("duration") or 0),
+                                "yt_url": dl_info.get("webpage_url", "https://soundcloud.com"),
+                            }
+                    except Exception as e:
+                        print(f"[Music] Skipping SoundCloud track (likely DRM protected): {e}")
+                        continue
     except Exception as e:
-        print(f"[Music] SoundCloud strategy failed: {e}")
+        print(f"[Music] SoundCloud search failed: {e}")
 
     return None
 
@@ -164,7 +163,7 @@ async def music_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     song = await asyncio.to_thread(_download_audio_sync, query)
 
     if not song:
-        await status_msg.edit_text("❌ <i>Failed to retrieve audio. Please try another search term.</i>", parse_mode="HTML")
+        await status_msg.edit_text("❌ <i>Failed to retrieve audio. It may be DRM protected. Try another song.</i>", parse_mode="HTML")
         return
 
     await status_msg.delete()
