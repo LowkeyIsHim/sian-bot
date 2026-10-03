@@ -13,6 +13,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 import access
 from branding import header
 from commands.group.settings import get_rule, set_enabled, cycle_action
+from commands.group import music_menu
 
 MAIN_TEXT = f"{header('group tools')}\n\npick something below."
 
@@ -90,9 +91,10 @@ def _main_keyboard() -> InlineKeyboardMarkup:
          InlineKeyboardButton("👑 Admins", callback_data="g:admins")],
         [InlineKeyboardButton("🎭 Fun", callback_data="g:fun"),
          InlineKeyboardButton("🎮 Games", callback_data="g:games")],
-        [InlineKeyboardButton("📊 Stats", callback_data="g:stats"),
-         InlineKeyboardButton("🔨 Moderation", callback_data="g:mod")],
-        [InlineKeyboardButton("🛡️ Auto-Protection", callback_data="g:protect")],
+        [InlineKeyboardButton("🎵 Music", callback_data="g:music"),
+         InlineKeyboardButton("📊 Stats", callback_data="g:stats")],
+        [InlineKeyboardButton("🔨 Moderation", callback_data="g:mod"),
+         InlineKeyboardButton("🛡️ Auto-Protection", callback_data="g:protect")],
     ])
 
 def _back(target: str = "g:main") -> InlineKeyboardMarkup:
@@ -151,6 +153,9 @@ async def _describe_admin(member) -> str:
 
 async def gmenu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
+    if query.data and query.data.startswith("g:music"):
+        await music_menu.handle(update, context)
+        return
     await query.answer()
     data = query.data
     chat_id = query.message.chat_id
