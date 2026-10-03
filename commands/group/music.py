@@ -440,4 +440,108 @@ async def music_callback(
         song.get("title", "Unknown Track")
     )
 
-    artist = html.escape
+    artist = html.escape(
+        song.get("artist", "Unknown Artist")
+    )
+
+    await query.edit_message_text(
+        f"⬇️ <i>Getting your selected track...</i>\n\n"
+        f"🎵 <b>{title}</b>\n"
+        f"👤 <b>{artist}</b>",
+        parse_mode="HTML",
+    )
+
+    downloaded = await asyncio.to_thread(
+        _download_selected_song,
+        song,
+    )
+
+    if not downloaded:
+        await query.edit_message_text(
+            "❌ <b>Couldn't retrieve this track.</b>\n\n"
+            "Try selecting another result.",
+            parse_mode="HTML",
+        )
+        return
+
+    filepath = downloaded["filepath"]
+
+    raw_duration = int(
+        downloaded.get("duration") or 0
+    )
+
+    try:
+        minutes, seconds = divmod(
+            raw_duration,
+            60,
+        )
+
+        duration_str = (
+            f"{minutes}:{seconds:02d}"
+        )
+
+        caption = (
+            f"{header('GODDESS MUSIC')}\n\n"
+            f"<b>🎵 {title}</b>\n"
+            f"👤 <b>Artist:</b> {artist}\n"
+            f"⏱ <b>Duration:</b> "
+            f"{duration_str} "
+            f"{DOT_DIVIDER} "
+            f"<b>Original Audio</b>"
+        )
+
+        with open(filepath, "rb") as audio_file:
+            await query.message.reply_audio(
+                audio=audio_file,
+                title=downloaded.get(
+                    "title",
+                    "Unknown Track",
+                ),
+                performer=downloaded.get(
+                    "artist",
+                    "Unknown Artist",
+                ),
+                duration=raw_duration or None,
+                caption=caption,
+                parse_mode="HTML",
+                read_timeout=120,
+                write_timeout=120,
+            )
+
+        await query.message.delete()
+
+    except Exception as e:
+        print(
+            f"[Music] Telegram upload failed: {e}"
+        )
+
+        await query.edit_message_text(
+            "❌ <i>Audio was retrieved, "
+            "but Telegram couldn't send it.</i>",
+            parse_mode="HTML",
+        )
+
+    finally:
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except Exception:
+                pass
+
+        MUSIC_RESULTS.pop(token, None)
+
+
+def register(app: Application) -> None:
+    app.add_handler(
+        CommandHandler(
+            "music",
+            music_command,
+        )
+    )
+
+    app.add_handler(
+        CallbackQueryHandler(
+            music_callback,
+            pattern=r"^mus_(pick|close):",
+        )
+            )
