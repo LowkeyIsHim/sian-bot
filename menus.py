@@ -58,9 +58,11 @@ GROUP_PUBLIC_COMMANDS = [
     BotCommand("topinviters", "See who's brought in the most people"),
     BotCommand("stats", "See your stats (reply to see someone else's)"),
     BotCommand("topchatters", "See the most active members"),
-    BotCommand("music", "Request a song (info + 30s preview)"),
+    BotCommand("music", "Find a song and play it right here in the chat"),
 ]
 
+# Music admin controls (access mode, allow / disallow, library) live inside
+# /music itself and the Music page of /gmenu, so they need no entries here.
 GROUP_ADMIN_COMMANDS = [
     BotCommand("tagall", "Mention everyone in this group"),
     BotCommand("mute", "Mute a member (reply to their message)"),
@@ -79,10 +81,6 @@ GROUP_ADMIN_COMMANDS = [
     BotCommand("antiflood", "Configure flood protection"),
     BotCommand("antilink", "Configure link protection"),
     BotCommand("antiword", "Configure banned words"),
-    BotCommand("musicaccess", "Set who can request music"),
-    BotCommand("allowmusic", "Allow a member to request music (reply)"),
-    BotCommand("disallowmusic", "Remove a member's music access (reply)"),
-    BotCommand("musicusers", "List members allowed to request music"),
 ]
 
 CREATOR_GROUP_COMMANDS = [
