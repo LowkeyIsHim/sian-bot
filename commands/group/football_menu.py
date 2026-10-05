@@ -3,8 +3,8 @@
 The Football category inside /gmenu:
 
   * Everyone: what the bot posts, the competitions covered, whether updates
-    are ON in this group, and a "Today's matches" button (kick-off times,
-    live scores, results).
+    are ON in this group, a "Today's matches" button (kick-off times, live
+    scores, results) and a "Tables" button (standings cards).
   * Admins and creators also get buttons to switch updates on / off for this
     group and to see the status (requests used today, last API problem).
 
@@ -53,7 +53,10 @@ def _main_page(chat_id: int, admin: bool):
         "",
         f"updates in this group: <b>{'ON' if on else 'OFF'}</b>",
     ]
-    rows = [[InlineKeyboardButton("📅 Today's matches", callback_data="g:football:today")]]
+    rows = [[
+        InlineKeyboardButton("📅 Today's matches", callback_data="g:football:today"),
+        InlineKeyboardButton("🏆 Tables", callback_data="g:football:tables"),
+    ]]
 
     if admin:
         if not os.environ.get("FOOTBALL_API_KEY"):
@@ -67,6 +70,18 @@ def _main_page(chat_id: int, admin: bool):
 
     rows.append([InlineKeyboardButton("⟵ Back", callback_data="g:main")])
     return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
+def _tables_page():
+    """League buttons - each one sends that table as a card (handled in football.py)."""
+    items = list(football.TABLE_LEAGUES.items())
+    rows = [
+        [InlineKeyboardButton(n, callback_data=f"fbt:{i}") for i, n in items[k:k + 2]]
+        for k in range(0, len(items), 2)
+    ]
+    rows.append([InlineKeyboardButton("⟵ Back", callback_data="g:football")])
+    text = "\n".join([_title("tables"), "", "pick a league - the table arrives as a card."])
+    return text, InlineKeyboardMarkup(rows)
 
 
 def _status_page():
@@ -112,6 +127,11 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await q.answer()
         await football._refresh_schedule()
         await _edit(q, (football._today_text(), _back()))
+        return
+
+    if data == "g:football:tables":
+        await q.answer()
+        await _edit(q, _tables_page())
         return
 
     # everything below is admin-only
