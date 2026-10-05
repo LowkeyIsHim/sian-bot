@@ -3,6 +3,8 @@
 Live football updates for the big competitions. ONE command: /football
 
     /football              today's big matches: kick-off times, live scores, results
+    /football table [league]   standings card - premier league, la liga, serie a,
+                           bundesliga, ligue 1, champions league
     /football on | off     (admins) switch automatic updates on / off for this group
     /football status       (admins) plan, requests used today, last API problem
 
@@ -41,15 +43,16 @@ import logging
 import os
 import time
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
 import requests
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
-from telegram.ext import CommandHandler, ContextTypes, filters
+from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, filters
 
 import access
 
@@ -128,6 +131,7 @@ def _db() -> dict:
         _data.setdefault("schedule", {"fetched": 0, "date": "", "fixtures": {}})
         _data.setdefault("usage", {"date": "", "calls": 0, "remaining": None})
         _data.setdefault("last_error", "")
+        _data.setdefault("tables", {})
     return _data
 
 
@@ -502,8 +506,8 @@ def _scorers(f: dict, events: list[dict]):
     return home, away
 
 
-def _glow(color, cx: int, cy: int, radius: int, alpha: int):
-    layer = Image.new("RGBA", (CARD, CARD), (0, 0, 0, 0))
+def _glow(color, cx: int, cy: int, radius: int, alpha: int, size=None):
+    layer = Image.new("RGBA", size or (CARD, CARD), (0, 0, 0, 0))
     ImageDraw.Draw(layer).ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=tuple(color) + (alpha,))
     return layer.filter(ImageFilter.GaussianBlur(radius * 0.55))
 
@@ -783,6 +787,252 @@ async def start_background_loop(bot) -> None:
         await asyncio.sleep(TICK_SECONDS)
 
 
+# ---------------------------------------------------------------- league tables
+TABLE_LEAGUES = {
+    39: "Premier League", 140: "La Liga", 135: "Serie A",
+    78: "Bundesliga", 61: "Ligue 1", 2: "Champions League",
+}
+_ALIASES = {
+    39: ("premier league", "premierleague", "epl", "pl", "england", "english"),
+    140: ("la liga", "laliga", "spain", "spanish"),
+    135: ("serie a", "seriea", "italy", "italian"),
+    78: ("bundesliga", "germany", "german"),
+    61: ("ligue 1", "ligue1", "france", "french"),
+    2: ("champions league", "championsleague", "champions", "ucl", "cl"),
+}
+TABLE_CACHE_SECONDS = 30 * 60
+TABLE_ROW_H = 46
+UCL_MAX_ROWS = 24          # the league phase has 36 teams - show the top 24
+ZONE_COLORS = {"ucl": (60, 130, 255), "uel": (255, 150, 40), "uecl": (60, 200, 120), "rel": (235, 70, 70)}
+ZONE_LABELS = {"ucl": "Champions League", "uel": "Europa League", "uecl": "Conference League", "rel": "Relegation"}
+UCL_LABELS = {"ucl": "Last 16", "uel": "Play-offs", "rel": "Eliminated"}
+
+
+def _league_from_text(text: str):
+    t = " ".join((text or "").lower().split())
+    if not t:
+        return None
+    if t.isdigit() and int(t) in TABLE_LEAGUES:
+        return int(t)
+    for lid, names in _ALIASES.items():
+        if t in names or t.replace(" ", "") in names:
+            return lid
+    return None
+
+
+def _season_for(now: float) -> int:
+    """European seasons start in August: Oct 2026 is the 2026/27 season (id 2026)."""
+    d = datetime.fromtimestamp(now, timezone.utc)
+    return d.year if d.month >= 7 else d.year - 1
+
+
+def _zone(desc: str, league_id: int) -> str:
+    d = (desc or "").lower()
+    if league_id == 2:
+        if "eliminat" in d or "relegat" in d:
+            return "rel"
+        if "play" in d:
+            return "uel"
+        if "round of 16" in d or "last 16" in d or "promotion" in d:
+            return "ucl"
+        return ""
+    if "relegat" in d:
+        return "rel"
+    if "conference" in d:
+        return "uecl"
+    if "europa" in d:
+        return "uel"
+    if "champions" in d:
+        return "ucl"
+    return ""
+
+
+def _parse_table(data, league_id: int):
+    groups = data[0]["league"]["standings"]
+    rows = []
+    for r in groups[0]:
+        a = r.get("all") or {}
+        rows.append({
+            "rank": r["rank"], "team": r["team"]["name"], "logo": r["team"].get("logo", ""),
+            "p": a.get("played", 0), "w": a.get("win", 0), "d": a.get("draw", 0), "l": a.get("lose", 0),
+            "gd": r.get("goalsDiff", 0) or 0, "pts": r.get("points", 0),
+            "zone": _zone(r.get("description"), league_id),
+        })
+    return rows
+
+
+async def _get_table(league_id: int):
+    """Returns (rows, season, fetched_ts, note). Served from a 30-minute cache so a
+    busy group can't burn the day's requests. note = None, 'stale' or an error text."""
+    now = _now()
+    cache = _db()["tables"].get(str(league_id))
+    if cache and now - cache["fetched"] < TABLE_CACHE_SECONDS:
+        return cache["rows"], cache["season"], cache["fetched"], None
+    if _calls_left() <= RESERVE_CALLS:
+        if cache:
+            return cache["rows"], cache["season"], cache["fetched"], "stale"
+        return None, None, None, "not enough API requests left today - try again tomorrow"
+
+    season = _season_for(now)
+    data, err = await _call("/standings", {"league": league_id, "season": season})
+    if not err and not data:  # season not started / not published yet - try the previous one
+        season -= 1
+        data, err = await _call("/standings", {"league": league_id, "season": season})
+    try:
+        if err or not data:
+            raise ValueError(err or "no table published yet")
+        rows = _parse_table(data, league_id)
+        if not rows:
+            raise ValueError("no table published yet")
+    except (KeyError, IndexError, TypeError, ValueError) as e:
+        if cache:
+            return cache["rows"], cache["season"], cache["fetched"], "stale"
+        return None, None, None, str(e)
+    _db()["tables"][str(league_id)] = {"fetched": now, "season": season, "rows": rows}
+    _save()
+    return rows, season, now, None
+
+
+def _render_table(name: str, season: int, rows: list[dict], updated: float, league_id: int, total: int):
+    """The standings card (JPEG bytes) or None."""
+    try:
+        W, y0, rh = 1080, 205, TABLE_ROW_H
+        n = len(rows)
+        H = y0 + 44 + n * rh + 150
+        with ThreadPoolExecutor(8) as ex:  # crests download in parallel (cached afterwards)
+            list(ex.map(_logo, [r["logo"] for r in rows if r["logo"]]))
+        accent = _team_color(_logo(rows[0]["logo"]) if rows and rows[0]["logo"] else None)
+
+        top_c, bot_c = (16, 18, 28), (5, 6, 9)
+        grad = Image.linear_gradient("L").resize((W, H))
+        canvas = Image.merge("RGB", [grad.point(lambda p, a=top_c[i], b=bot_c[i]: int(a + (b - a) * p / 255)) for i in range(3)]).convert("RGBA")
+        canvas = Image.alpha_composite(canvas, _glow(accent, W // 2, 90, 330, 120, (W, H)))
+        edges = Image.radial_gradient("L").resize((W, H)).point(lambda p: int((p / 255) ** 2 * 150))
+        canvas = Image.composite(Image.new("RGBA", (W, H), (0, 0, 0, 255)), canvas, edges)
+
+        # translucent parts: zebra rows + zone bars
+        over = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        od = ImageDraw.Draw(over)
+        ys = y0 + 44
+        for i, r in enumerate(rows):
+            y = ys + i * rh
+            if i % 2 == 0:
+                od.rounded_rectangle((30, y + 2, W - 30, y + rh - 2), 12, fill=(255, 255, 255, 14))
+            if r["zone"]:
+                od.rounded_rectangle((36, y + 8, 42, y + rh - 8), 3, fill=ZONE_COLORS[r["zone"]] + (255,))
+        canvas = Image.alpha_composite(canvas, over)
+
+        d = ImageDraw.Draw(canvas)
+        white, grey = (255, 255, 255), (150, 153, 166)
+        fl, txt = _fit(d, " ".join(_plain(name).upper()), "med", 34, 900, 20)
+        d.text((W // 2, 74), txt, font=fl, fill=(215, 217, 226), anchor="mm")
+        d.text((W // 2, 122), f"{season}/{str(season + 1)[2:]}  ·  updated {_clock(updated)}", font=_font("reg", 24), fill=grey, anchor="mm")
+
+        cols = {"p": 655, "w": 725, "d": 795, "l": 865, "gd": 945, "pts": 1020}
+        d.text((78, y0 + 16), "#", font=_font("med", 22), fill=grey, anchor="mm")
+        d.text((170, y0 + 16), "TEAM", font=_font("med", 22), fill=grey, anchor="lm")
+        for key, label in (("p", "P"), ("w", "W"), ("d", "D"), ("l", "L"), ("gd", "GD"), ("pts", "PTS")):
+            d.text((cols[key], y0 + 16), label, font=_font("med", 22), fill=grey, anchor="mm")
+
+        f_rank, f_num, f_pts = _font("bold", 26), _font("reg", 26), _font("bold", 28)
+        for i, r in enumerate(rows):
+            cy = ys + i * rh + rh // 2
+            d.text((78, cy), str(r["rank"]), font=f_rank, fill=white, anchor="mm")
+            logo = _logo(r["logo"]) if r["logo"] else None
+            if logo is not None:
+                lg = logo.copy()
+                lg.thumbnail((34, 34), Image.LANCZOS)
+                canvas.alpha_composite(lg, (112 + (34 - lg.width) // 2, cy - lg.height // 2))
+            fn, txt = _fit(d, _plain(r["team"]), "med", 28, 455, 18)
+            d.text((170, cy), txt, font=fn, fill=white, anchor="lm")
+            for key in ("p", "w", "d", "l"):
+                d.text((cols[key], cy), str(r[key]), font=f_num, fill=(205, 207, 216), anchor="mm")
+            gd = r["gd"]
+            d.text((cols["gd"], cy), f"{gd:+d}" if gd else "0", font=f_num, fill=(205, 207, 216), anchor="mm")
+            d.text((cols["pts"], cy), str(r["pts"]), font=f_pts, fill=white, anchor="mm")
+
+        # legend (only the zones that exist) + footer
+        labels = UCL_LABELS if league_id == 2 else ZONE_LABELS
+        present = []
+        for r in rows:
+            if r["zone"] and r["zone"] not in present:
+                present.append(r["zone"])
+        ly = ys + n * rh + 34
+        x = 50
+        fg = _font("reg", 22)
+        for z in present:
+            d.ellipse((x, ly - 8, x + 16, ly + 8), fill=ZONE_COLORS[z])
+            d.text((x + 26, ly), labels.get(z, z), font=fg, fill=(190, 192, 202), anchor="lm")
+            x += 26 + d.textlength(labels.get(z, z), font=fg) + 34
+        if total > n:
+            d.text((W - 50, ly), f"top {n} of {total}", font=fg, fill=grey, anchor="rm")
+        d.text((W // 2, H - 44), "G O D D E S S   F O O T B A L L", font=_font("med", 20), fill=(110, 113, 126), anchor="mm")
+
+        img = canvas.convert("RGB")
+        grain = Image.effect_noise((W, H), 24).convert("RGB")
+        img = Image.blend(img, ImageChops.overlay(img, grain), 0.05)
+        out = BytesIO()
+        img.save(out, "JPEG", quality=90, optimize=True)
+        return out.getvalue()
+    except Exception as e:
+        logger.warning(f"[Football] could not render the table: {e}")
+        return None
+
+
+def _table_text(name: str, rows: list[dict]) -> str:
+    """Plain monospace fallback if the card can't be drawn."""
+    lines = [f"{'#':>2} {'Team':<16}{'P':>3}{'GD':>4}{'Pts':>4}"]
+    for r in rows:
+        lines.append(f"{r['rank']:>2} {_plain(r['team'])[:15]:<16}{r['p']:>3}{r['gd']:>+4d}{r['pts']:>4}")
+    return f"<b>{html.escape(name)}</b>\n<pre>{html.escape(chr(10).join(lines))}</pre>"
+
+
+async def _send_table(message, league_id: int) -> None:
+    name = TABLE_LEAGUES[league_id]
+    rows, season, fetched, note = await _get_table(league_id)
+    if rows is None:
+        await message.reply_text(f"Couldn't get the {name} table: {note}")
+        return
+    total = len(rows)
+    rows = rows[: UCL_MAX_ROWS if league_id == 2 else 24]
+    caption = f"🏆 <b>{html.escape(name)}</b> · {season}/{str(season + 1)[2:]}"
+    if note == "stale":
+        caption += "\n<i>couldn't refresh just now - showing the last table I have</i>"
+    card = await asyncio.to_thread(_render_table, name, season, rows, fetched, league_id, total)
+    try:
+        if card:
+            buf = BytesIO(card)
+            buf.name = "table.jpg"
+            await message.reply_photo(buf, caption=caption, parse_mode=ParseMode.HTML)
+            return
+    except TelegramError as e:
+        logger.warning(f"[Football] could not send the table card: {e}")
+    await message.reply_text(_table_text(name, rows), parse_mode=ParseMode.HTML)
+
+
+def _table_picker() -> InlineKeyboardMarkup:
+    items = list(TABLE_LEAGUES.items())
+    rows = [
+        [InlineKeyboardButton(n, callback_data=f"fbt:{i}") for i, n in items[k:k + 2]]
+        for k in range(0, len(items), 2)
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+async def table_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    try:
+        league_id = int((q.data or "").split(":")[1])
+    except (IndexError, ValueError):
+        await q.answer()
+        return
+    if league_id not in TABLE_LEAGUES:
+        await q.answer()
+        return
+    await q.answer("Getting the table... 🏆")
+    await _send_table(q.message, league_id)
+
+
 # ---------------------------------------------------------------- /football
 def _privileged(user_id: int) -> bool:
     return access.is_creator(user_id) or access.is_group_admin(user_id)
@@ -827,6 +1077,14 @@ async def football_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     sub = context.args[0].lower() if context.args else ""
     db = _db()
 
+    if sub == "table":
+        league_id = _league_from_text(" ".join(context.args[1:]))
+        if league_id is None:
+            await m.reply_text("Which table? Pick one:", reply_markup=_table_picker())
+        else:
+            await _send_table(m, league_id)
+        return
+
     if sub in ("on", "off", "status"):
         if not _privileged(user.id):
             return  # silent, like the other admin commands
@@ -862,3 +1120,4 @@ async def football_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 def register(app) -> None:
     app.add_handler(CommandHandler("football", football_cmd, filters=filters.ChatType.GROUPS))
+    app.add_handler(CallbackQueryHandler(table_callback, pattern="^fbt:"), group=11)
