@@ -72,7 +72,17 @@ ESPN_SLUGS = {
     39: "eng.1", 140: "esp.1", 135: "ita.1", 78: "ger.1", 61: "fra.1",
     2: "uefa.champions", 1: "fifa.world", 4: "uefa.euro", 6: "caf.nations",
 }
-HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; GoddessBot/1.0)", "Accept": "application/json"}
+# ESPN answers 403 to obviously-automated clients, so ask the way a browser does.
+HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.espn.com/",
+    "Origin": "https://www.espn.com",
+}
+ESPN_HOSTS = ("site.api.espn.com", "site.web.api.espn.com")  # main, then backup
+_good_host = None  # whichever address last worked is tried first
 
 # API-Football competition ids (order = order in /football)
 COVER = {
@@ -180,13 +190,28 @@ def _utc_date(ts: float) -> str:
 
 # ---------------------------------------------------------------- API (blocking; run in a thread)
 def _fetch_json(url: str, params: dict | None = None) -> dict:
-    """Blocking GET (run in a thread). Returns {'data': json|None, 'err': str|None}."""
-    try:
-        r = requests.get(url, params=params or {}, headers=HEADERS, timeout=15)
-        r.raise_for_status()
-        return {"data": r.json(), "err": None}
-    except Exception as e:
-        return {"data": None, "err": f"{type(e).__name__}: {e}"}
+    """Blocking GET (run in a thread). Tries ESPN's main address, then its backup.
+    Returns {'data': json|None, 'err': str|None}."""
+    global _good_host
+    hosts = list(ESPN_HOSTS)
+    if _good_host in hosts:
+        hosts.remove(_good_host)
+        hosts.insert(0, _good_host)
+    errs = []
+    for host in hosts:
+        label = "main" if host == ESPN_HOSTS[0] else "backup"
+        try:
+            r = requests.get(
+                url.replace(ESPN_HOSTS[0], host, 1), params=params or {}, headers=HEADERS, timeout=15
+            )
+            if r.status_code == 200:
+                data = r.json()
+                _good_host = host
+                return {"data": data, "err": None}
+            errs.append(f"HTTP {r.status_code} ({label})")
+        except Exception as e:
+            errs.append(f"{type(e).__name__} ({label})")
+    return {"data": None, "err": "; ".join(errs)}
 
 
 async def _call(url: str, params: dict | None = None):
@@ -1172,7 +1197,7 @@ async def _probe() -> str:
             continue
         data, err = await _call(ESPN_SCOREBOARD.format(slug=slug), {"dates": day})
         if err or not isinstance(data, dict):
-            lines.append(f"{label} ({slug}): FAILED - {(err or 'no data')[:70]}")
+            lines.append(f"{label} ({slug}): FAILED - {(err or 'no data')[:100]}")
         else:
             events = data.get("events") or []
             readable = sum(1 for e in events if _from_espn(e, lid, label))
@@ -1183,7 +1208,7 @@ async def _probe() -> str:
         data, err = await _call(ESPN_STANDINGS.format(slug=ESPN_SLUGS[lid]), {})
         try:
             n = len(_parse_table(data, lid)) if isinstance(data, dict) else 0
-            lines.append(f"table {COVER[lid]}: {n} rows" if not err else f"table {COVER[lid]}: FAILED - {err[:60]}")
+            lines.append(f"table {COVER[lid]}: {n} rows" if not err else f"table {COVER[lid]}: FAILED - {err[:100]}")
         except Exception as e:
             lines.append(f"table {COVER[lid]}: could not read ({type(e).__name__})")
     return "\n".join(lines)
