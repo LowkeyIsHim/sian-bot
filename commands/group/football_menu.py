@@ -13,7 +13,6 @@ register(); group_menu.py routes every 'g:football...' button here.
 """
 
 import html
-import os
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
@@ -59,8 +58,6 @@ def _main_page(chat_id: int, admin: bool):
     ]]
 
     if admin:
-        if not os.environ.get("FOOTBALL_API_KEY"):
-            lines += ["", "⚠ <i>FOOTBALL_API_KEY isn't set in secrets.env, so updates can't run yet.</i>"]
         rows.append([
             InlineKeyboardButton(
                 "🔕 Turn updates off" if on else "🔔 Turn updates on", callback_data="g:football:toggle"
@@ -88,14 +85,13 @@ def _status_page():
     db = football._db()
     u = db["usage"]
     used = u["calls"] if u["date"] == football._utc_date(football._now()) else 0
-    left = "unknown" if u["remaining"] is None else str(u["remaining"])
     problem = html.escape(db["last_error"]) if db["last_error"] else "none"
     chats = len(football._enabled_chats())
     text = "\n".join([
         _title("football status"),
         "",
-        f"requests used today: <b>{used}</b> of {football.DAILY_BUDGET}",
-        f"api says left today: {left}",
+        "source: ESPN public data <i>(unofficial)</i>",
+        f"requests made today: <b>{used}</b>",
         f"groups with updates on: {chats}",
         f"last problem: {problem}",
     ])
