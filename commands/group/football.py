@@ -6,7 +6,8 @@ Live football updates for the big competitions. ONE command: /football
     /football table [league]   standings card - premier league, la liga, serie a,
                            bundesliga, ligue 1, champions league
     /football on | off     (admins) switch automatic updates on / off for this group
-    /football status       (admins) plan, requests used today, last API problem
+    /football status       (admins) source, requests made today, last problem
+    /football probe        (admins) test what ESPN returns for every competition
 
 When updates are ON the bot posts, on its own:
     - "kick-off in 30 minutes"                                   (text)
@@ -18,17 +19,17 @@ When updates are ON the bot posts, on its own:
 Competitions: Premier League, La Liga, Serie A, Bundesliga, Ligue 1,
 Champions League, World Cup, Euros, AFCON.
 
-Data: API-Football (api-sports.io). Free plan = 100 requests a day, so the bot
-polls ONE call for all live matches, only while a covered match is on or about
-to start, and stretches the gap between polls when the day's requests run low.
-Free-plan updates are therefore a few minutes behind real time.
+Data: ESPN's public JSON (site.api.espn.com). It needs no key and no account,
+but it is UNOFFICIAL and undocumented: ESPN can change or block it without
+warning. The bot only asks while a covered match is on or about to start
+(one small request per active competition, every minute), caches tables for
+30 minutes, and keeps a plain-text fallback for everything. If it ever stops
+working, /football probe shows exactly what ESPN returned.
 
-secrets.env:
-    FOOTBALL_API_KEY=...            (required)
-    FOOTBALL_TZ=Africa/Lagos        (optional - kick-off times are shown in this zone)
-    FOOTBALL_LEAGUES=39,140,...     (optional - override the competition ids)
-    FOOTBALL_DAILY_BUDGET=95        (optional - requests the bot may use per day)
-    FOOTBALL_POLL_SECONDS=180       (optional - fastest gap between live polls)
+secrets.env (all optional):
+    FOOTBALL_TZ=Africa/Lagos        kick-off times are shown in this zone
+    FOOTBALL_LEAGUES=39,140,...     override the competition list
+    FOOTBALL_POLL_SECONDS=60        gap between live polls
 
 bot.py: start the engine in _post_init, next to the news loop:
     asyncio.create_task(football.start_background_loop(app.bot))
@@ -41,6 +42,7 @@ import html
 import json
 import logging
 import os
+import re
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -62,7 +64,15 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))  # .../bot_src/commands/g
 _PERSISTENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(_THIS_DIR)))
 DATA_FILE = os.path.join(_PERSISTENT_DIR, "football_data.json")
 
-API_BASE = "https://v3.football.api-sports.io"
+ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard"
+ESPN_STANDINGS = "https://site.api.espn.com/apis/v2/sports/soccer/{slug}/standings"  # /apis/v2/, not /apis/site/v2/
+# our competition ids -> ESPN slugs. eng.1 esp.1 ita.1 ger.1 fra.1 uefa.champions fifa.world
+# are confirmed; uefa.euro and caf.nations are best guesses - /football probe checks them.
+ESPN_SLUGS = {
+    39: "eng.1", 140: "esp.1", 135: "ita.1", 78: "ger.1", 61: "fra.1",
+    2: "uefa.champions", 1: "fifa.world", 4: "uefa.euro", 6: "caf.nations",
+}
+HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; GoddessBot/1.0)", "Accept": "application/json"}
 
 # API-Football competition ids (order = order in /football)
 COVER = {
@@ -78,7 +88,6 @@ COVER = {
 }
 
 TICK_SECONDS = 30
-RESERVE_CALLS = 6              # always keep a few requests for schedule refreshes
 SCHEDULE_REFRESH_SECONDS = 6 * 3600
 PRE_MATCH_SECONDS = 30 * 60
 WINDOW_BEFORE = 90             # start watching a match 90s before kick-off
@@ -106,8 +115,7 @@ def _cover_ids() -> list[int]:
     return ids or list(COVER)
 
 
-DAILY_BUDGET = _env_int("FOOTBALL_DAILY_BUDGET", 95)
-BASE_POLL_SECONDS = _env_int("FOOTBALL_POLL_SECONDS", 180)
+BASE_POLL_SECONDS = _env_int("FOOTBALL_POLL_SECONDS", 60)
 
 
 def _now() -> float:
@@ -171,55 +179,151 @@ def _utc_date(ts: float) -> str:
 
 
 # ---------------------------------------------------------------- API (blocking; run in a thread)
-def _api(path: str, params: dict) -> dict:
-    """Returns {'data': list|None, 'err': str|None, 'remaining': int|None}."""
-    key = os.environ.get("FOOTBALL_API_KEY")
-    if not key:
-        return {"data": None, "err": "FOOTBALL_API_KEY is not set", "remaining": None}
+def _fetch_json(url: str, params: dict | None = None) -> dict:
+    """Blocking GET (run in a thread). Returns {'data': json|None, 'err': str|None}."""
     try:
-        r = requests.get(
-            API_BASE + path, params=params, headers={"x-apisports-key": key}, timeout=15
-        )
-        remaining = r.headers.get("x-ratelimit-requests-remaining")
-        remaining = int(remaining) if remaining and remaining.isdigit() else None
+        r = requests.get(url, params=params or {}, headers=HEADERS, timeout=15)
         r.raise_for_status()
-        body = r.json()
-        errs = body.get("errors")
-        if errs:  # API-Football reports problems here, even with a 200 status
-            msg = next(iter(errs.values())) if isinstance(errs, dict) else str(errs[0])
-            return {"data": None, "err": str(msg), "remaining": remaining}
-        return {"data": body.get("response", []), "err": None, "remaining": remaining}
+        return {"data": r.json(), "err": None}
     except Exception as e:
-        return {"data": None, "err": f"{type(e).__name__}: {e}", "remaining": None}
+        return {"data": None, "err": f"{type(e).__name__}: {e}"}
 
 
-async def _call(path: str, params: dict):
-    """Counts the request against today's budget. Returns (data, err)."""
+async def _call(url: str, params: dict | None = None):
+    """Returns (data, err) and keeps a per-day request count for /football status."""
     db = _db()
-    if not os.environ.get("FOOTBALL_API_KEY"):
-        db["last_error"] = "FOOTBALL_API_KEY is not set in secrets.env"
-        return None, db["last_error"]
     today = _utc_date(_now())
     if db["usage"]["date"] != today:
         db["usage"] = {"date": today, "calls": 0, "remaining": None}
-    res = await asyncio.to_thread(_api, path, params)
+    res = await asyncio.to_thread(_fetch_json, url, params)
     db["usage"]["calls"] += 1
-    if res["remaining"] is not None:
-        db["usage"]["remaining"] = res["remaining"]
     if res["err"]:
         db["last_error"] = f"{_clock(_now())}: {res['err']}"
-        logger.warning(f"[Football] API problem: {res['err']}")
+        logger.warning(f"[Football] request problem: {res['err']}")
     return res["data"], res["err"]
 
 
-def _calls_left() -> int:
-    u = _db()["usage"]
-    if u["date"] != _utc_date(_now()):
-        return DAILY_BUDGET
-    left = DAILY_BUDGET - u["calls"]
-    if u["remaining"] is not None:  # trust the API's own count when we have it
-        left = min(left, u["remaining"])
-    return left
+# ---------------------------------------------------------------- ESPN adapter
+def _parse_iso(text: str):
+    t = (text or "").replace("Z", "").replace("+00:00", "")
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
+        try:
+            return int(datetime.strptime(t, fmt).replace(tzinfo=timezone.utc).timestamp())
+        except ValueError:
+            continue
+    return None
+
+
+def _espn_status(stype: dict) -> str:
+    """ESPN status -> the short codes the engine uses (NS 1H HT 2H ET P FT AET PEN ...)."""
+    name = (stype.get("name") or "").upper()
+    state = (stype.get("state") or "").lower()
+    if "POSTPONED" in name:
+        return "PST"
+    if "CANCEL" in name:
+        return "CANC"
+    if "ABANDON" in name:
+        return "ABD"
+    if state == "pre":
+        return "NS"
+    if state == "in":
+        if any(w in name for w in ("DELAY", "SUSPEND", "INTERRUPT")):
+            return "INT"
+        if "HALFTIME" in name and "EXTRA" not in name:
+            return "HT"
+        if "SHOOTOUT" in name or "PENALT" in name:
+            return "P"
+        if "EXTRA" in name:
+            return "ET"
+        if "FIRST_HALF" in name:
+            return "1H"
+        if "SECOND_HALF" in name:
+            return "2H"
+        return "LIVE"
+    if state == "post":
+        if "PEN" in name or "SHOOTOUT" in name:
+            return "PEN"
+        if "AET" in name or "EXTRA" in name:
+            return "AET"
+        return "FT"
+    return "NS"
+
+
+def _espn_minute(status: dict):
+    disp = status.get("displayClock") or (status.get("type") or {}).get("shortDetail") or ""
+    m = re.match(r"\s*(\d+)", str(disp))
+    if m:
+        return int(m.group(1))
+    clock = status.get("clock")
+    return int(clock // 60) if isinstance(clock, (int, float)) and clock else None
+
+
+def _espn_events(comp: dict, names: dict) -> list[dict]:
+    """ESPN 'details' -> goals and red cards in the engine's event format."""
+    out = []
+    for d in comp.get("details") or []:
+        if d.get("shootout"):
+            continue  # penalty shoot-out kicks are not goals
+        clock = str((d.get("clock") or {}).get("displayValue") or "")
+        m = re.match(r"\s*(\d+)'?(?:\s*\+\s*(\d+))?", clock)
+        elapsed = int(m.group(1)) if m else None
+        extra = int(m.group(2)) if m and m.group(2) else None
+        athletes = d.get("athletesInvolved") or [{}]
+        player = athletes[0].get("displayName") or athletes[0].get("fullName") or ""
+        team = names.get(str((d.get("team") or {}).get("id")), "")
+        if d.get("scoringPlay"):
+            kind, detail = "Goal", "Own Goal" if d.get("ownGoal") else "Penalty" if d.get("penaltyKick") else "Normal Goal"
+        elif d.get("redCard"):
+            kind, detail = "Card", "Red Card"
+        else:
+            continue
+        out.append({
+            "type": kind, "detail": detail, "time": {"elapsed": elapsed, "extra": extra},
+            "team": {"name": team}, "player": {"name": player}, "assist": {},
+        })
+    return out
+
+
+def _from_espn(ev: dict, league_id: int, league_name: str):
+    """One ESPN scoreboard event -> the fixture dict the engine understands (or None)."""
+    try:
+        comp = ev["competitions"][0]
+        sides = {c.get("homeAway"): c for c in comp["competitors"]}
+        home, away = sides["home"], sides["away"]
+        ts = _parse_iso(ev.get("date"))
+        if ts is None:
+            return None
+        status = ev.get("status") or comp.get("status") or {}
+        short = _espn_status(status.get("type") or {})
+
+        def team(c):
+            t = c.get("team") or {}
+            return {"id": str(t.get("id")), "name": t.get("displayName") or t.get("name") or "?",
+                    "logo": t.get("logo") or ""}
+
+        def score(c):
+            try:
+                return int(c.get("score"))
+            except (TypeError, ValueError):
+                return None
+
+        h, a = team(home), team(away)
+        hg, ag = (None, None) if short == "NS" else (score(home), score(away))
+        elapsed = _espn_minute(status) if short in LIVE else (90 if short in ENDED_PLAYED else None)
+        fx = {
+            "fixture": {"id": str(ev["id"]), "timestamp": ts, "status": {"short": short, "elapsed": elapsed}},
+            "league": {"id": league_id, "name": league_name},
+            "teams": {"home": {"name": h["name"], "logo": h["logo"]}, "away": {"name": a["name"], "logo": a["logo"]}},
+            "goals": {"home": hg, "away": ag},
+            "events": _espn_events(comp, {h["id"]: h["name"], a["id"]: a["name"]}),
+            "score": {},
+        }
+        sh, sa = home.get("shootoutScore"), away.get("shootoutScore")
+        if sh is not None and sa is not None:
+            fx["score"] = {"penalty": {"home": sh, "away": sa}}
+        return fx
+    except (KeyError, IndexError, TypeError):
+        return None
 
 
 # ---------------------------------------------------------------- fixtures
@@ -257,21 +361,36 @@ async def _refresh_schedule(force: bool = False) -> None:
     today = _local(now).strftime("%Y-%m-%d")
     if not force and sched["date"] == today and now - sched["fetched"] < SCHEDULE_REFRESH_SECONDS:
         return
-    if now - _last_sched_try < 300 or _calls_left() <= 0:  # after a failure, wait 5 min
+    if now - _last_sched_try < 300:  # after a failure, wait 5 minutes
         return
     _last_sched_try = now
-    data, err = await _call("/fixtures", {"date": today, "timezone": _tz()[1]})
-    if err or data is None:
-        return
-    ids = set(_cover_ids())
-    fresh = {}
-    for fx in data:
-        try:
-            if fx["league"]["id"] in ids:
-                s = _slim(fx)
-                fresh[str(s["id"])] = s
-        except (KeyError, TypeError):
+
+    # ESPN groups matches by day, so ask for today and tomorrow (UTC) and keep
+    # the ones that fall on today's date in the bot's timezone
+    dates = [_utc_date(now).replace("-", ""), _utc_date(now + 86400).replace("-", "")]
+    fresh, tried, failed = {}, 0, 0
+    for lid in _cover_ids():
+        slug = ESPN_SLUGS.get(lid)
+        if not slug:
             continue
+        for d in dates:
+            tried += 1
+            data, err = await _call(ESPN_SCOREBOARD.format(slug=slug), {"dates": d})
+            if err or not isinstance(data, dict):
+                failed += 1
+                continue
+            name = COVER.get(lid) or ((data.get("leagues") or [{}])[0].get("name")) or str(lid)
+            for ev in data.get("events") or []:
+                fx = _from_espn(ev, lid, name)
+                if fx is None:
+                    continue
+                s = _slim(fx)
+                if _local(s["ts"]).strftime("%Y-%m-%d") == today:
+                    fresh[str(s["id"])] = s
+            await asyncio.sleep(0.3)  # be gentle with a free public service
+    if tried and failed == tried:
+        return  # everything failed - keep what we have and retry later
+
     old = sched["fixtures"] if sched["date"] == today else {}
     for fid, s in fresh.items():  # keep the freshest live status we already know
         if fid in old and old[fid]["status"] in LIVE | FINISHED and s["status"] == "NS":
@@ -406,9 +525,9 @@ _FONT_FILES = {"bold": "Poppins-Bold.ttf", "med": "Poppins-Medium.ttf", "reg": "
 _font_cache: dict = {}
 _logo_cache: dict = {}
 CARD = 1080
-# The API lists an own goal under the team of the player who scored it, so the
-# goal belongs on the OTHER side of the scoreboard. Flip this if it looks wrong.
-OWN_GOAL_CREDITED_TO_OPPONENT = True
+# ESPN lists a goal under the team that is CREDITED with it, so an own goal is
+# already on the right side. Set this to True if own goals show on the wrong side.
+OWN_GOAL_CREDITED_TO_OPPONENT = False
 
 
 def _font(key: str, size: int):
@@ -630,9 +749,11 @@ async def _process(bot, fx: dict) -> None:
     if not st["seen"]:
         st["seen"] = True
         late = f["status"] in {"HT", "2H", "ET", "BT", "P"} or (f["elapsed"] or 0) > 5
-        if late:
+        if late or f["status"] in FINISHED:
             st["events"] = [_ev_key(e) for e in relevant]
             st["sent"] += [s for s in ("KO", "HT") if s not in st["sent"]]
+            if f["status"] in FINISHED and "FT" not in st["sent"]:
+                st["sent"].append("FT")  # an old result - don't re-announce it
 
     if f["status"] in LIVE:
         st["live"] = True
@@ -663,37 +784,8 @@ async def _process(bot, fx: dict) -> None:
         st["live"] = False
 
 
-def _active_seconds_left(now: float) -> float:
-    """Seconds of watch-worthy match time left before the API's daily reset (00:00 UTC)."""
-    end_of_day = (datetime.fromtimestamp(now, timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).timestamp()
-    spans = []
-    for f in _db()["schedule"]["fixtures"].values():
-        if f["status"] in FINISHED:
-            continue
-        start, stop = max(now, f["ts"] - WINDOW_BEFORE), min(end_of_day, f["ts"] + WINDOW_AFTER)
-        if stop > start:
-            spans.append((start, stop))
-    spans.sort()
-    total, cur_s, cur_e = 0.0, None, None
-    for s, e in spans:  # merge overlapping matches so they aren't counted twice
-        if cur_e is None or s > cur_e:
-            if cur_e is not None:
-                total += cur_e - cur_s
-            cur_s, cur_e = s, e
-        else:
-            cur_e = max(cur_e, e)
-    if cur_e is not None:
-        total += cur_e - cur_s
-    return total
-
-
 def _poll_interval(now: float) -> float:
-    """Spread the remaining requests across the match time still to come."""
-    spare = _calls_left() - RESERVE_CALLS
-    if spare <= 0:
-        return float("inf")
-    return max(BASE_POLL_SECONDS, _active_seconds_left(now) / spare)
+    return BASE_POLL_SECONDS
 
 
 def _watching(now: float) -> bool:
@@ -709,32 +801,35 @@ _last_poll = 0.0
 
 
 async def _live_poll(bot) -> None:
-    ids = set(_cover_ids())
-    data, err = await _call("/fixtures", {"live": "all"})
-    if err or data is None:
-        return
-    live_now = set()
-    for fx in data:
-        try:
-            if fx["league"]["id"] not in ids:
-                continue
-            live_now.add(str(fx["fixture"]["id"]))
-            await _process(bot, fx)
-        except (KeyError, TypeError) as e:
-            logger.warning(f"[Football] skipped a malformed fixture: {e}")
-
-    # matches leave the live feed the moment they end - fetch their final state
-    gone = [fid for fid, st in _db()["fixtures"].items() if st.get("live") and fid not in live_now]
-    for fid in gone[:3]:
-        if _calls_left() <= 0:
-            break
-        detail, derr = await _call("/fixtures", {"id": fid})
-        if derr or not detail:
+    """One small request per competition that has a match on or about to start."""
+    now = _now()
+    targets: dict = {}
+    for f in _db()["schedule"]["fixtures"].values():
+        if f["status"] in FINISHED:
             continue
-        try:
-            await _process(bot, detail[0])
-        except (KeyError, TypeError) as e:
-            logger.warning(f"[Football] skipped a malformed fixture: {e}")
+        if f["status"] in LIVE or f["ts"] - WINDOW_BEFORE <= now <= f["ts"] + WINDOW_AFTER:
+            dt = datetime.fromtimestamp(f["ts"], timezone.utc)
+            days = targets.setdefault(f["league_id"], set())
+            days.add(dt.strftime("%Y%m%d"))
+            if dt.hour < 5:  # ESPN files very early UTC kick-offs under the previous day
+                days.add((dt - timedelta(days=1)).strftime("%Y%m%d"))
+    for lid, days in targets.items():
+        slug = ESPN_SLUGS.get(lid)
+        if not slug:
+            continue
+        for d in sorted(days):
+            data, err = await _call(ESPN_SCOREBOARD.format(slug=slug), {"dates": d})
+            if err or not isinstance(data, dict):
+                continue
+            name = COVER.get(lid) or ((data.get("leagues") or [{}])[0].get("name")) or str(lid)
+            for ev in data.get("events") or []:
+                fx = _from_espn(ev, lid, name)
+                if fx is None:
+                    continue
+                try:
+                    await _process(bot, fx)
+                except (KeyError, TypeError) as e:
+                    logger.warning(f"[Football] skipped a malformed match: {e}")
     _save()
 
 
@@ -848,46 +943,77 @@ def _zone(desc: str, league_id: int) -> str:
 
 
 def _parse_table(data, league_id: int):
-    groups = data[0]["league"]["standings"]
+    """ESPN standings -> table rows (children[].standings.entries[])."""
+    entries = []
+    for ch in (data.get("children") or []):
+        entries = (ch.get("standings") or {}).get("entries") or []
+        if entries:
+            break
     rows = []
-    for r in groups[0]:
-        a = r.get("all") or {}
+    for i, e in enumerate(entries):
+        stats = {s.get("name"): s.get("value") for s in (e.get("stats") or []) if isinstance(s, dict)}
+        team = e.get("team") or {}
+        logos = team.get("logos") or []
+        note = e.get("note") or {}
+
+        def num(*keys, default=0):
+            for k in keys:
+                v = stats.get(k)
+                if v is not None:
+                    try:
+                        return int(v)
+                    except (TypeError, ValueError):
+                        pass
+            return default
+
+        gd = stats.get("pointDifferential")
+        if gd is None:
+            gd = num("pointsFor") - num("pointsAgainst")
         rows.append({
-            "rank": r["rank"], "team": r["team"]["name"], "logo": r["team"].get("logo", ""),
-            "p": a.get("played", 0), "w": a.get("win", 0), "d": a.get("draw", 0), "l": a.get("lose", 0),
-            "gd": r.get("goalsDiff", 0) or 0, "pts": r.get("points", 0),
-            "zone": _zone(r.get("description"), league_id),
+            "rank": num("rank", default=int(note.get("rank") or i + 1)),
+            "team": team.get("displayName") or team.get("name") or "?",
+            "logo": (logos[0].get("href") if logos and isinstance(logos[0], dict) else "") or team.get("logo") or "",
+            "p": num("gamesPlayed"), "w": num("wins"), "d": num("ties", "draws"), "l": num("losses"),
+            "gd": int(gd), "pts": num("points"),
+            "zone": _zone(note.get("description"), league_id),
         })
+    rows.sort(key=lambda r: r["rank"])
     return rows
 
 
+def _table_season(data) -> int | None:
+    for node in [data] + list(data.get("children") or []):
+        s = node.get("season")
+        if isinstance(s, dict) and isinstance(s.get("year"), int):
+            return s["year"]
+        if isinstance(s, int):
+            return s
+        st = (node.get("standings") or {}).get("season")
+        if isinstance(st, int):
+            return st
+    return None
+
+
 async def _get_table(league_id: int):
-    """Returns (rows, season, fetched_ts, note). Served from a 30-minute cache so a
-    busy group can't burn the day's requests. note = None, 'stale' or an error text."""
+    """Returns (rows, season, fetched_ts, note). Cached for 30 minutes so a busy
+    group can't hammer ESPN. note = None, 'stale' or an error text."""
     now = _now()
     cache = _db()["tables"].get(str(league_id))
     if cache and now - cache["fetched"] < TABLE_CACHE_SECONDS:
         return cache["rows"], cache["season"], cache["fetched"], None
-    if _calls_left() <= RESERVE_CALLS:
-        if cache:
-            return cache["rows"], cache["season"], cache["fetched"], "stale"
-        return None, None, None, "not enough API requests left today - try again tomorrow"
-
-    season = _season_for(now)
-    data, err = await _call("/standings", {"league": league_id, "season": season})
-    if not err and not data:  # season not started / not published yet - try the previous one
-        season -= 1
-        data, err = await _call("/standings", {"league": league_id, "season": season})
+    slug = ESPN_SLUGS.get(league_id)
+    data, err = await _call(ESPN_STANDINGS.format(slug=slug), {}) if slug else (None, "unknown competition")
     try:
-        if err or not data:
+        if err or not isinstance(data, dict):
             raise ValueError(err or "no table published yet")
         rows = _parse_table(data, league_id)
         if not rows:
-            raise ValueError("no table published yet")
+            raise ValueError("the table came back empty - /football probe shows what ESPN sent")
     except (KeyError, IndexError, TypeError, ValueError) as e:
         if cache:
             return cache["rows"], cache["season"], cache["fetched"], "stale"
         return None, None, None, str(e)
+    season = _table_season(data) or _season_for(now)
     _db()["tables"][str(league_id)] = {"fetched": now, "season": season, "rows": rows}
     _save()
     return rows, season, now, None
@@ -1034,6 +1160,34 @@ async def table_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 # ---------------------------------------------------------------- /football
+async def _probe() -> str:
+    """What does ESPN actually return? One line per competition (admins only)."""
+    lines = ["ESPN check (unofficial source)", ""]
+    day = _utc_date(_now()).replace("-", "")
+    for lid in _cover_ids():
+        slug = ESPN_SLUGS.get(lid)
+        label = COVER.get(lid, str(lid))
+        if not slug:
+            lines.append(f"{label}: no ESPN slug set")
+            continue
+        data, err = await _call(ESPN_SCOREBOARD.format(slug=slug), {"dates": day})
+        if err or not isinstance(data, dict):
+            lines.append(f"{label} ({slug}): FAILED - {(err or 'no data')[:70]}")
+        else:
+            events = data.get("events") or []
+            readable = sum(1 for e in events if _from_espn(e, lid, label))
+            details = sum(len(((e.get("competitions") or [{}])[0]).get("details") or []) for e in events)
+            lines.append(f"{label} ({slug}): {len(events)} matches today, {readable} readable, {details} goal/card rows")
+        await asyncio.sleep(0.3)
+    for lid in (39, 2):
+        data, err = await _call(ESPN_STANDINGS.format(slug=ESPN_SLUGS[lid]), {})
+        try:
+            n = len(_parse_table(data, lid)) if isinstance(data, dict) else 0
+            lines.append(f"table {COVER[lid]}: {n} rows" if not err else f"table {COVER[lid]}: FAILED - {err[:60]}")
+        except Exception as e:
+            lines.append(f"table {COVER[lid]}: could not read ({type(e).__name__})")
+    return "\n".join(lines)
+
 def _privileged(user_id: int) -> bool:
     return access.is_creator(user_id) or access.is_group_admin(user_id)
 
@@ -1085,7 +1239,7 @@ async def football_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await _send_table(m, league_id)
         return
 
-    if sub in ("on", "off", "status"):
+    if sub in ("on", "off", "status", "probe"):
         if not _privileged(user.id):
             return  # silent, like the other admin commands
         conf = db["chats"].setdefault(str(chat.id), {"enabled": False})
@@ -1100,15 +1254,18 @@ async def football_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             conf["enabled"] = False
             _save()
             await m.reply_text("Football updates are OFF.")
+        elif sub == "probe":
+            await m.reply_text("Checking ESPN for every competition, one moment...")
+            await m.reply_text(await _probe())
         else:
             u = db["usage"]
             used = u["calls"] if u["date"] == _utc_date(_now()) else 0
             names = ", ".join(COVER.get(i, str(i)) for i in _cover_ids())
             await m.reply_text(
                 f"Football updates: {'ON' if conf['enabled'] else 'OFF'}\n"
+                f"Source: ESPN public data (unofficial)\n"
                 f"Competitions: {names}\n"
-                f"Requests used today: {used} of {DAILY_BUDGET} "
-                f"(API says {u['remaining']} left)\n"
+                f"Requests made today: {used}\n"
                 f"Last problem: {db['last_error'] or 'none'}"
             )
         return
