@@ -4,6 +4,10 @@ navigation as the personal /menu. The auto-protection pages let you
 toggle rules and cycle their action directly with buttons, no typing
 needed for the common case (fine-tuning warn limits/mute minutes/words
 still uses the text commands - see settings.py).
+
+The Music and Football pages live in their own modules (music_menu.py,
+football_menu.py); every 'g:music...' / 'g:football...' button is routed
+there from gmenu_callback below.
 """
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -13,7 +17,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 import access
 from branding import header
 from commands.group.settings import get_rule, set_enabled, cycle_action
-from commands.group import music_menu
+from commands.group import music_menu, football_menu
 
 MAIN_TEXT = f"{header('group tools')}\n\npick something below."
 
@@ -92,10 +96,12 @@ def _main_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🎭 Fun", callback_data="g:fun"),
          InlineKeyboardButton("🎮 Games", callback_data="g:games")],
         [InlineKeyboardButton("🎵 Music", callback_data="g:music"),
-         InlineKeyboardButton("📊 Stats", callback_data="g:stats")],
-        [InlineKeyboardButton("🔨 Moderation", callback_data="g:mod"),
-         InlineKeyboardButton("🛡️ Auto-Protection", callback_data="g:protect")],
+         InlineKeyboardButton("⚽ Football", callback_data="g:football")],
+        [InlineKeyboardButton("📊 Stats", callback_data="g:stats"),
+         InlineKeyboardButton("🔨 Moderation", callback_data="g:mod")],
+        [InlineKeyboardButton("🛡️ Auto-Protection", callback_data="g:protect")],
     ])
+
 
 def _back(target: str = "g:main") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton("⟵ Back", callback_data=target)]])
@@ -153,15 +159,22 @@ async def _describe_admin(member) -> str:
 
 async def gmenu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
+
+    # Music / Football pages are handled by their own modules, which answer
+    # the callback themselves (so they can show alerts) - route before answering.
     if query.data and query.data.startswith("g:music"):
         await music_menu.handle(update, context)
         return
+    if query.data and query.data.startswith("g:football"):
+        await football_menu.handle(update, context)
+        return
+
     await query.answer()
     data = query.data
     chat_id = query.message.chat_id
     user_id = query.from_user.id
     is_privileged = access.is_creator(user_id) or access.is_group_admin(user_id)
-    
+
     if data == "g:stats":
         await query.edit_message_text(STATS_TEXT, parse_mode="Markdown", reply_markup=_back())
         return
