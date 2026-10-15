@@ -85,6 +85,7 @@ ALBUM_URL = "https://api.deezer.com/album"
 TRACK_URL = "https://api.deezer.com/track"
 
 AUTO_PLAY = False            # True = send the audio without waiting for the Play button
+CARD_STYLE = "wide"          # "wide" = compact landscape card, "tall" = big portrait card
 RESULT_LIMIT = 5
 COOLDOWN_SECONDS = 20        # per member, admins/creators are exempt
 STATE_CAP = 60               # remembered sessions (each holds up to 5 cards)
@@ -297,21 +298,45 @@ def _rank(query: str, items: list[dict]) -> list[dict]:
     return sorted(items, key=score, reverse=True)
 
 
-async def _find_songs(query: str):
-    results, err = await asyncio.to_thread(_search_all, query)
-    if err or not results:
-        return results, err
+_FILLER = {"by", "ft", "feat", "featuring", "x", "and", "the"}
 
+
+def _coverage(q: set, t: dict) -> float:
+    q = q - _FILLER
+    if not q:
+        return 1.0
+    return len(q & _tokens(f"{t['title']} {t['artist']} {t['album']}")) / len(q)
+
+
+def _dedupe(items: list[dict]) -> list[dict]:
     seen, uniq = set(), []  # same song on album + single + compilation -> keep one
-    for t in results:
+    for t in items:
         key = (re.sub(r"[^a-z0-9]+", "", t["title"].lower()), re.sub(r"[^a-z0-9]+", "", t["artist"].lower()))
         if key not in seen:
             seen.add(key)
             uniq.append(t)
+    return uniq
 
-    head = uniq[:8]
-    await asyncio.gather(*(asyncio.to_thread(_enrich_track, t) for t in head))
-    return _rank(query, head)[:RESULT_LIMIT], None
+
+async def _find_songs(query: str):
+    q = _tokens(query)
+    results, err = await asyncio.to_thread(_search_all, query)
+
+    ranked = []
+    if results:
+        head = _dedupe(results)[:8]
+        await asyncio.gather(*(asyncio.to_thread(_enrich_track, t) for t in head))
+        ranked = _rank(query, head)[:RESULT_LIMIT]
+    if ranked and _coverage(q, ranked[0]) >= 0.99:  # every typed word matched
+        return ranked, None
+
+    # weak / no Deezer match (small or local artists): compare with YouTube info
+    yt = _rank(query, _dedupe(await asyncio.to_thread(_yt_results, query)))[:RESULT_LIMIT]
+    if yt and (not ranked or _coverage(q, yt[0]) > _coverage(q, ranked[0])):
+        return yt, None
+    if ranked:
+        return ranked, None
+    return [], err
 
 
 # ---------------------------------------------------------------- group library
@@ -505,6 +530,183 @@ def _wave(seed: str, n: int) -> list[float]:
     ]
 
 
+WIDE_W, WIDE_H, WIDE_OUT = 960, 500, 1.25   # design size, output = x1.25 (1200x625)
+
+
+def _title_lines(m, text: str, max_w: float):
+    """One line if it fits (46 down to 30), otherwise two lines at 34 (2nd one ellipsized)."""
+    for size in range(_sc(46), _sc(30) - 1, -_sc(2)):
+        f = _f("bold", size)
+        if m.textlength(text, font=f) <= max_w:
+            return f, [text]
+    f = _f("bold", _sc(34))
+    words, line1, i = text.split(), "", 0
+    while i < len(words) and m.textlength((line1 + " " + words[i]).strip(), font=f) <= max_w:
+        line1 = (line1 + " " + words[i]).strip()
+        i += 1
+    if not line1 or i >= len(words):  # one giant word - shrink + truncate it
+        f, one = _fit(m, text, "bold", _sc(34), max_w, _sc(34))
+        return f, [one]
+    _, line2 = _fit(m, " ".join(words[i:]), "bold", _sc(34), max_w, _sc(34))
+    return f, [line1, line2]
+
+
+def _render_wide(cover_bytes: bytes, t: dict) -> bytes:
+    """Compact landscape card: cover on the left, info + player on the right."""
+    cover = Image.open(BytesIO(cover_bytes)).convert("RGB")
+    CW, CH = _sc(WIDE_W), _sc(WIDE_H)
+    X0, X1 = _sc(486), _sc(904)
+
+    hue, accent, colorful = _palette(cover)
+    canvas = _background(cover, hue, colorful, CW, CH)
+
+    # --- cover with glow + shadow
+    cs, rad = _sc(380), _sc(30)
+    cx0, cy0 = _sc(56), _sc(60)
+    canvas = Image.alpha_composite(
+        canvas, _glow((CW, CH), (cx0 + _sc(14), cy0 + _sc(34), cx0 + cs - _sc(14), cy0 + cs + _sc(34)), rad, accent, 105, _sc(60))
+    )
+    canvas = Image.alpha_composite(
+        canvas, _glow((CW, CH), (cx0, cy0 + _sc(18), cx0 + cs, cy0 + cs + _sc(18)), rad, (0, 0, 0), 150, _sc(24))
+    )
+    vc, vr = (cx0 + cs // 2 + _sc(40), cy0 + cs // 2), cs // 2 - _sc(6)   # vinyl peeking out behind the cover
+    vinyl = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
+    vd = ImageDraw.Draw(vinyl)
+    vd.ellipse((vc[0] - vr, vc[1] - vr, vc[0] + vr, vc[1] + vr), fill=(14, 14, 18, 238))
+    for k in range(1, 9):  # grooves
+        rr = int(vr * (0.36 + 0.075 * k))
+        vd.ellipse((vc[0] - rr, vc[1] - rr, vc[0] + rr, vc[1] + rr), outline=(255, 255, 255, 15), width=_sc(1))
+    lr = int(vr * 0.30)
+    vd.ellipse((vc[0] - lr, vc[1] - lr, vc[0] + lr, vc[1] + lr), fill=tuple(accent) + (255,))
+    hr = _sc(7)
+    vd.ellipse((vc[0] - hr, vc[1] - hr, vc[0] + hr, vc[1] + hr), fill=(14, 14, 18, 255))
+    canvas = Image.alpha_composite(canvas, vinyl)
+
+    art = ImageOps.fit(cover, (cs, cs), Image.LANCZOS).convert("RGBA")
+    mask = Image.new("L", (cs, cs), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, cs - 1, cs - 1), rad, fill=255)
+    canvas.paste(art, (cx0, cy0), mask)
+
+    # --- layout of the text block (title may take 1 or 2 lines)
+    m = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    f_title, lines = _title_lines(m, _display(t["title"]), X1 - X0)
+    line_h = _sc(44) if len(lines) == 2 else _sc(58)
+    title_h = line_h * len(lines)
+    top = _sc(96) + (_sc(88) - title_h) // 2
+    artist_y = top + title_h + _sc(10)
+    badge = _sc(28) if t["explicit"] else 0
+    ax = X0 + (badge + _sc(12) if badge else 0)
+    f_artist, artist_txt = _fit(m, _display(t["artist"]), "med", _sc(28), X1 - ax, _sc(20))
+    chip_y, chip_h = artist_y + _sc(50), _sc(38)
+
+    # --- translucent parts first (cover border, chips, dim waveform bars)
+    overlay = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
+    od = ImageDraw.Draw(overlay)
+    od.rounded_rectangle((cx0, cy0, cx0 + cs, cy0 + cs), rad, outline=(255, 255, 255, 48), width=_sc(2))
+
+    texts, x = [], X0
+    chips_src = [
+        (t["genre"], False),
+        (t["year"], False),
+        (f"{t['bpm']} BPM" if t.get("bpm") else "", False),
+        (t["album"], True),
+    ]
+    for raw, may_cut in chips_src:
+        raw = _display(raw)
+        if not raw:
+            continue
+        room = X1 - x - _sc(32)
+        if may_cut:
+            if room < _sc(80):
+                break
+            f, txt = _fit(m, raw, "med", _sc(20), min(room, _sc(230)), _sc(20))
+        else:
+            f, txt = _f("med", _sc(20)), raw
+            if m.textlength(txt, font=f) > room:
+                continue
+        w = m.textlength(txt, font=f) + _sc(32)
+        od.rounded_rectangle((x, chip_y, x + w, chip_y + chip_h), chip_h // 2, fill=(255, 255, 255, 38))
+        texts.append(((x + w / 2, chip_y + chip_h / 2), txt, f, (236, 236, 240), "mm"))
+        x += w + _sc(10)
+
+    n, bw = 30, _sc(8)
+    gap = (X1 - X0 - n * bw) / (n - 1)
+    wave_cy, progress = _sc(346), 0.34
+    played = []
+    for i, hgt in enumerate(_wave(f"{t['title']}{t['artist']}", n)):
+        bh = _sc(10) + hgt * _sc(34)
+        x0 = X0 + i * (bw + gap)
+        box = (x0, wave_cy - bh / 2, x0 + bw, wave_cy + bh / 2)
+        if (i + 0.5) / n <= progress:
+            played.append(box)
+        else:
+            od.rounded_rectangle(box, bw // 2, fill=(255, 255, 255, 70))
+
+    canvas = Image.alpha_composite(canvas, overlay)
+    d = ImageDraw.Draw(canvas)
+
+    # --- top label
+    base_y, ebw, egap = _sc(66), _sc(5), _sc(4)
+    for i, eh in enumerate((10, 18, 13)):
+        ex = X0 + i * (ebw + egap)
+        d.rounded_rectangle((ex, base_y - _sc(eh), ex + ebw, base_y), _sc(2), fill=accent)
+    _draw_spaced(d, X0 + _sc(34), _sc(45), "NOW PLAYING", _f("bold", _sc(17)), _sc(3), accent)
+    f_brand, brand = _f("med", _sc(15)), "GODDESS MUSIC"
+    _draw_spaced(d, X1 - _spaced_w(m, brand, f_brand, _sc(2)), _sc(47), brand, f_brand, _sc(2), (180, 180, 188))
+
+    # --- title, artist (+ explicit badge)
+    for i, line in enumerate(lines):
+        d.text((X0, top + i * line_h), line, font=f_title, fill=(255, 255, 255))
+    if badge:
+        d.rounded_rectangle((X0, artist_y + _sc(7), X0 + badge, artist_y + _sc(7) + badge), _sc(6), fill=(208, 208, 214))
+        d.text((X0 + badge / 2, artist_y + _sc(7) + badge / 2), "E", font=_f("bold", _sc(18)), fill=(24, 24, 28), anchor="mm")
+    d.text((ax, artist_y), artist_txt, font=f_artist, fill=_mix(accent, (255, 255, 255), 0.5))
+
+    # --- chips text, waveform (played part), times
+    for xy, txt, f, fill, anchor in texts:
+        d.text(xy, txt, font=f, fill=fill, anchor=anchor)
+    for box in played:
+        d.rounded_rectangle(box, bw // 2, fill=accent)
+    if t["secs"]:
+        f, ty = _f("reg", _sc(18)), wave_cy + _sc(28)
+        d.text((X0, ty), _fmt(int(t["secs"] * progress)), font=f, fill=(170, 170, 178))
+        d.text((X1, ty), _fmt(int(t["secs"])), font=f, fill=(170, 170, 178), anchor="ra")
+
+    # --- controls
+    cy, cxm, white = _sc(416), (X0 + X1) // 2, (255, 255, 255)
+    r = _sc(30)
+    d.ellipse((cxm - r, cy - r, cxm + r, cy + r), fill=white)
+    bwid, bhei, off = _sc(8), _sc(24), _sc(7)
+    d.rounded_rectangle((cxm - off - bwid, cy - bhei // 2, cxm - off, cy + bhei // 2), _sc(2), fill=(18, 18, 22))
+    d.rounded_rectangle((cxm + off, cy - bhei // 2, cxm + off + bwid, cy + bhei // 2), _sc(2), fill=(18, 18, 22))
+    px, nx, tri = cxm - _sc(112), cxm + _sc(112), _sc(15)
+    d.polygon([(px + _sc(12), cy - tri), (px + _sc(12), cy + tri), (px - _sc(9), cy)], fill=white)
+    d.rounded_rectangle((px - _sc(15), cy - tri, px - _sc(10), cy + tri), _sc(2), fill=white)
+    d.polygon([(nx - _sc(12), cy - tri), (nx - _sc(12), cy + tri), (nx + _sc(9), cy)], fill=white)
+    d.rounded_rectangle((nx + _sc(10), cy - tri, nx + _sc(15), cy + tri), _sc(2), fill=white)
+    hx, hr2 = X0 + _sc(14), _sc(8)  # heart
+    d.ellipse((hx - 2 * hr2 + _sc(1), cy - hr2 * 1.7, hx + _sc(1), cy - hr2 * 0.1), fill=accent)
+    d.ellipse((hx - _sc(1), cy - hr2 * 1.7, hx + 2 * hr2 - _sc(1), cy - hr2 * 0.1), fill=accent)
+    d.polygon([(hx - 2 * hr2 + _sc(2), cy - hr2 * 0.75), (hx + 2 * hr2 - _sc(2), cy - hr2 * 0.75), (hx, cy + hr2 * 1.7)], fill=accent)
+    qx = X1 - _sc(14)  # queue icon
+    for k in range(3):
+        qy = cy - _sc(9) + k * _sc(9)
+        d.rounded_rectangle((qx - _sc(13), qy - _sc(2), qx + _sc(13), qy + _sc(2)), _sc(2), fill=(200, 200, 206))
+
+    # --- shrink (smooth edges) + a touch of film grain
+    ow, oh = int(WIDE_W * WIDE_OUT), int(WIDE_H * WIDE_OUT)
+    img = canvas.convert("RGB").resize((ow, oh), Image.LANCZOS)
+    grain = Image.effect_noise((ow, oh), 28).convert("RGB")
+    img = Image.blend(img, ImageChops.overlay(img, grain), 0.06)
+    out = BytesIO()
+    img.save(out, "JPEG", quality=90, optimize=True)
+    return out.getvalue()
+
+
+def _render(cover_bytes: bytes, t: dict) -> bytes:
+    return (_render_tall if CARD_STYLE == "tall" else _render_wide)(cover_bytes, t)
+
+
 def _placeholder_cover(t: dict) -> bytes:
     hue = int(hashlib.md5(f"{t['title']}{t['artist']}".encode()).hexdigest()[:4], 16) / 65535
     top = tuple(int(c * 255) for c in colorsys.hsv_to_rgb(hue, 0.5, 0.6))
@@ -517,7 +719,7 @@ def _placeholder_cover(t: dict) -> bytes:
     return out.getvalue()
 
 
-def _render(cover_bytes: bytes, t: dict) -> bytes:
+def _render_tall(cover_bytes: bytes, t: dict) -> bytes:
     cover = Image.open(BytesIO(cover_bytes)).convert("RGB")
     CW, CH = _sc(W), _sc(H)
     L, R = _sc(90), _sc(990)
@@ -732,9 +934,7 @@ def _score_yt(t: dict, e: dict) -> float:
     return score
 
 
-def _yt_candidates(t: dict) -> list[str]:
-    """Video ids of the 2 best YouTube matches for this song."""
-    first_artist = t["artist"].split(",")[0].strip()
+def _yt_search_entries(q: str, n: int) -> list[dict]:
     opts = {
         "quiet": True, "no_warnings": True, "skip_download": True,
         "extract_flat": True, "socket_timeout": 15,
@@ -744,17 +944,59 @@ def _yt_candidates(t: dict) -> list[str]:
         opts["cookiefile"] = cookies
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(f"ytsearch8:{first_artist} {t['title']}", download=False)
+            info = ydl.extract_info(f"ytsearch{n}:{q}", download=False)
     except Exception as e:
         logger.warning(f"[Music] yt search failed: {e}")
         return []
-
-    entries = [
+    return [
         e for e in (info or {}).get("entries") or []
         if e and e.get("id") and (not e.get("duration") or int(e["duration"]) <= MAX_YT_SECONDS)
     ]
+
+
+def _yt_candidates(t: dict) -> list[str]:
+    """Video ids of the 2 best YouTube matches for this song."""
+    first_artist = t["artist"].split(",")[0].strip()
+    entries = _yt_search_entries(f"{first_artist} {t['title']}", 8)
     entries.sort(key=lambda e: _score_yt(t, e), reverse=True)
     return [e["id"] for e in entries[:2]]
+
+
+_NOISE_RE = re.compile(
+    r"\s*[\(\[][^\)\]]*\b(official|lyrics?|audio|video|visuali[sz]er|hd|hq|4k)\b[^\)\]]*[\)\]]", re.I
+)
+
+
+def _yt_results(query: str) -> list[dict]:
+    """Song cards built from YouTube info - for small/local artists Deezer doesn't have."""
+    out, ql = [], query.lower()
+    for e in _yt_search_entries(query, 8):
+        raw = (e.get("title") or "").strip()
+        low = raw.lower()
+        if any(
+            re.search(rf"\b{re.escape(w)}\b", low) and not re.search(rf"\b{re.escape(w)}\b", ql)
+            for w in _BAD_WORDS
+        ):
+            continue
+        chan = re.sub(r"\s*-\s*topic$", "", e.get("channel") or e.get("uploader") or "", flags=re.I).strip()
+        if " - " in raw:
+            artist, title = (p.strip() for p in raw.split(" - ", 1))
+        else:
+            artist, title = chan or "Unknown artist", raw
+        title = _NOISE_RE.sub("", title).strip(" -|–")
+        if not title:
+            continue
+        thumbs = e.get("thumbnails") or []
+        art = ""
+        if thumbs:
+            art = max(thumbs, key=lambda x: (x.get("width") or 0) * (x.get("height") or 0)).get("url", "")
+        t = _parse({"title": title, "id": None, "duration": int(e.get("duration") or 0),
+                    "artist": {"name": artist}, "album": {}})
+        if t:
+            t.update({"art": art or f"https://i.ytimg.com/vi/{e['id']}/mqdefault.jpg",
+                      "enriched": True, "tracked": True, "yt_id": e["id"]})
+            out.append(t)
+    return out
 
 
 def _yt_download(video_id: str, clients=YT_CLIENTS) -> str | None:
@@ -804,33 +1046,25 @@ def _get_audio_file(t: dict) -> str | None:
 
 # ---------------------------------------------------------------- messages
 def _caption(t: dict) -> str:
-    lines = [f"🎵 <b>{html.escape(t['title'])}</b>", f"👤 {html.escape(t['artist'])}"]
-    sub = " · ".join(p for p in (t["album"], t["year"]) if p)
-    if sub:
-        lines.append(f"💿 {html.escape(sub)}")
-    return "\n".join(lines)
+    return f"🎵 <b>{html.escape(t['title'])}</b> — {html.escape(t['artist'])}"
 
 
 def _keyboard(t: dict, idx: int, total: int, playing: bool = False) -> InlineKeyboardMarkup:
     q = t["query"]
-    rows = [
-        [InlineKeyboardButton("⏹ Stop" if playing else "▶ Play", callback_data="music:play")],
-        [
-            InlineKeyboardButton("Spotify", url=f"https://open.spotify.com/search/{q}"),
-            InlineKeyboardButton("Apple Music", url=f"https://music.apple.com/search?term={q}"),
-            InlineKeyboardButton("YT Music", url=f"https://music.youtube.com/search?q={q}"),
-        ],
-    ]
-    nav = []
+    top = [InlineKeyboardButton("⏹ Stop" if playing else "▶ Play", callback_data="music:play")]
     if total > 1:
-        nav += [
+        top += [
             InlineKeyboardButton("⏮", callback_data="music:prev"),
             InlineKeyboardButton(f"{idx + 1}/{total}", callback_data="music:noop"),
             InlineKeyboardButton("⏭", callback_data="music:next"),
         ]
-    nav.append(InlineKeyboardButton("✕", callback_data="music:close"))
-    rows.append(nav)
-    return InlineKeyboardMarkup(rows)
+    top.append(InlineKeyboardButton("✕", callback_data="music:close"))
+    links = [
+        InlineKeyboardButton("Spotify", url=f"https://open.spotify.com/search/{q}"),
+        InlineKeyboardButton("Apple Music", url=f"https://music.apple.com/search?term={q}"),
+        InlineKeyboardButton("YT Music", url=f"https://music.youtube.com/search?q={q}"),
+    ]
+    return InlineKeyboardMarkup([top, links])
 
 
 async def _prepare(t: dict) -> None:
